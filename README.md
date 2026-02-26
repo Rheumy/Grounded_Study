@@ -76,6 +76,7 @@ See `.env.example` for the full list. Key variables:
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
 - `BLOB_READ_WRITE_TOKEN`
 - `ADMIN_EMAIL`
+- `ADMIN_JOB_TOKEN` (for authenticated job processing endpoint)
 
 ## Local Dev Auth Bypass
 
