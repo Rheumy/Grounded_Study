@@ -6,6 +6,7 @@ import { validateUpload } from "@/lib/security/file-validation";
 import { sanitizeFilename } from "@/lib/security/sanitize";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { saveFile } from "@/lib/storage/storage";
+import { enforceUploadLimit, incrementUsage } from "@/lib/billing/usage";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -28,6 +29,13 @@ export async function POST(request: Request) {
   const validation = await validateUpload(buffer, file.name, file.size);
   if (!validation.allowed || !validation.fileInfo) {
     return NextResponse.json({ error: validation.error ?? "Invalid upload" }, { status: 400 });
+  }
+
+  try {
+    await enforceUploadLimit(user.id, buffer.length);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Upload limit reached";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   const docId = crypto.randomUUID();
@@ -64,6 +72,8 @@ export async function POST(request: Request) {
       status: "QUEUED"
     }
   });
+
+  await incrementUsage({ userId: user.id, uploads: 1, storageBytes: buffer.length });
 
   return NextResponse.json({ documentId: document.id, status: document.status });
 }

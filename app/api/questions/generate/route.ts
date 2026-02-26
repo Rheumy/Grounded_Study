@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestions } from "@/lib/llm/generate";
+import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -24,6 +25,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    await enforceQuestionLimit(user.id, count);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Question limit reached";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  try {
     const results = await generateQuestions({
       ownerId: user.id,
       documentIds: documents.map((doc) => doc.id),
@@ -31,6 +39,8 @@ export async function POST(request: Request) {
       difficulty,
       count
     });
+    const passed = results.filter((result) => result.status === "PASSED").length;
+    await incrementUsage({ userId: user.id, questions: passed });
     return NextResponse.json({ results });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";

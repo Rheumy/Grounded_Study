@@ -1,15 +1,67 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth/options";
+import { prisma } from "@/lib/db/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function Page() {
+export default async function AdminPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.isAdmin) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Admin</CardTitle>
+          <CardDescription>Access restricted.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-ink/60">You do not have admin access.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const [userCount, documentCount, questionCount] = await Promise.all([
+    prisma.user.count(),
+    prisma.document.count(),
+    prisma.question.count()
+  ]);
+
+  const recentUsage = await prisma.usageCounter.findMany({
+    orderBy: { day: "desc" },
+    take: 5
+  });
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Coming soon</CardTitle>
-        <CardDescription>This section will be implemented in upcoming slices.</CardDescription>
-      </CardHeader>
-      <CardContent className="text-sm text-ink/60">
-        This is a secure placeholder so routing and auth checks work end-to-end.
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Platform overview</CardTitle>
+          <CardDescription>High-level counts.</CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm text-ink/70">
+          <p>Users: {userCount}</p>
+          <p>Documents: {documentCount}</p>
+          <p>Questions: {questionCount}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent usage</CardTitle>
+          <CardDescription>Latest daily counters.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentUsage.length === 0 ? (
+            <p className="text-sm text-ink/60">No usage yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {recentUsage.map((row) => (
+                <li key={row.id}>
+                  {row.day.toDateString()}: uploads {row.uploads}, questions {row.questions}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

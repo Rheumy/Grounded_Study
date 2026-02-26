@@ -28,7 +28,7 @@ export async function generateQuestions(params: {
   count: number;
 }) {
   const styleProfile = params.styleProfileId
-    ? await prisma.styleProfile.findUnique({ where: { id: params.styleProfileId } })
+    ? await prisma.styleProfile.findFirst({ where: { id: params.styleProfileId, ownerId: params.ownerId } })
     : null;
 
   if (params.styleProfileId && !styleProfile) {
