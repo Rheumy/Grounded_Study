@@ -1,14 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ExamClient } from "@/app/dashboard/exam/exam-client";
 
-export default function Page() {
+export default function ExamPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Coming soon</CardTitle>
-        <CardDescription>This section will be implemented in upcoming slices.</CardDescription>
+        <CardTitle>Exam mode</CardTitle>
+        <CardDescription>Timed sessions with configurable counts.</CardDescription>
       </CardHeader>
-      <CardContent className="text-sm text-ink/60">
-        This is a secure placeholder so routing and auth checks work end-to-end.
+      <CardContent>
+        <ExamClient />
       </CardContent>
     </Card>
   );

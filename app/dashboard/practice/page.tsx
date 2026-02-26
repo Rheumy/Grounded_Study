@@ -1,14 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PracticeClient } from "@/app/dashboard/practice/practice-client";
 
-export default function Page() {
+export default function PracticePage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Coming soon</CardTitle>
-        <CardDescription>This section will be implemented in upcoming slices.</CardDescription>
+        <CardTitle>Practice mode</CardTitle>
+        <CardDescription>Instant feedback with citations and spaced repetition.</CardDescription>
       </CardHeader>
-      <CardContent className="text-sm text-ink/60">
-        This is a secure placeholder so routing and auth checks work end-to-end.
+      <CardContent>
+        <PracticeClient />
       </CardContent>
     </Card>
   );
