@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS "Document" (
   "ownerId" text NOT NULL,
   "title" text NOT NULL,
   "sourceType" "DocumentSourceType" NOT NULL,
+  "contentType" text NOT NULL,
   "storageKey" text NOT NULL,
   "status" "DocumentStatus" NOT NULL DEFAULT 'QUEUED',
   "pageCount" integer,

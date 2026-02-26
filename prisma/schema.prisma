@@ -133,6 +133,7 @@ model Document {
   ownerId      String
   title        String
   sourceType   DocumentSourceType
+  contentType  String
   storageKey   String
   status       DocumentStatus     @default(QUEUED)
   pageCount    Int?
