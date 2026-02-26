@@ -4,9 +4,12 @@ import { authOptions } from "@/lib/auth/options";
 import { claimNextIngestionJob, markJobCompleted, markJobFailed } from "@/lib/jobs/queue";
 import { processIngestionJob } from "@/lib/jobs/processor";
 
-export async function POST() {
+export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.isAdmin) {
+  const token = process.env.ADMIN_JOB_TOKEN;
+  const authHeader = request.headers.get("authorization");
+  const tokenOk = token && authHeader === `Bearer ${token}`;
+  if (!session?.user?.isAdmin && !tokenOk) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
