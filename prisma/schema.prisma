@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [pgvector]
+}
+
+enum PlanTier {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+  INCOMPLETE
+}
+
+enum DocumentStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  OCR_PENDING
+  OCR_DISABLED
+}
+
+enum DocumentSourceType {
+  PDF
+  IMAGE
+  TEXT
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum QuestionType {
+  MCQ
+  SHORT_ANSWER
+}
+
+enum VerifierStatus {
+  PENDING
+  PASSED
+  FAILED
+  INSUFFICIENT_EVIDENCE
+}
+
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String?   @unique
+  emailVerified  DateTime?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  documents      Document[]
+  styleProfiles  StyleProfile[]
+  questions      Question[]
+  practiceAttempts PracticeAttempt[]
+  examSessions   ExamSession[]
+  subscriptions  Subscription[]
+  spacedRepetitionSchedules SpacedRepetitionSchedule[]
+  auditLogs      AuditLog[] @relation("ActorLogs")
+  usageCounters  UsageCounter[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Subscription {
+  id               String              @id @default(cuid())
+  userId           String
+  plan             PlanTier            @default(FREE)
+  status           SubscriptionStatus  @default(ACTIVE)
+  stripeCustomerId String?
+  stripeSubId      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Document {
+  id           String            @id @default(cuid())
+  ownerId      String
+  title        String
+  sourceType   DocumentSourceType
+  storageKey   String
+  status       DocumentStatus     @default(QUEUED)
+  pageCount    Int?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  chunks DocumentChunk[]
+  ingestionJobs IngestionJob[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  content     String
+  embedding   Unsupported("vector(1536)")
+  page        Int?
+  chunkIndex  Int
+  hash        String
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@unique([documentId, chunkIndex])
+  @@unique([documentId, hash])
+}
+
+model IngestionJob {
+  id          String    @id @default(cuid())
+  documentId  String
+  status      JobStatus @default(QUEUED)
+  attempts    Int       @default(0)
+  lastError   String?
+  lockedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([lockedAt])
+}
+
+model StyleProfile {
+  id                 String   @id @default(cuid())
+  ownerId            String
+  name               String
+  schemaJson         Json
+  examplesText       String?
+  examplesImagesText String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  questions Question[]
+}
+
+model Question {
+  id              String         @id @default(cuid())
+  ownerId         String
+  styleProfileId  String?
+  difficulty      Int
+  type            QuestionType
+  stem            String
+  optionsJson     Json?
+  answer          String
+  rationale       String
+  citationsJson   Json
+  verifierStatus  VerifierStatus @default(PENDING)
+  tagsJson        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  styleProfile StyleProfile? @relation(fields: [styleProfileId], references: [id], onDelete: SetNull)
+  practiceAttempts PracticeAttempt[]
+  examSessionQuestions ExamSessionQuestion[]
+  spacedRepetitionSchedules SpacedRepetitionSchedule[]
+
+  @@index([ownerId])
+  @@index([difficulty])
+}
+
+model PracticeAttempt {
+  id            String   @id @default(cuid())
+  userId        String
+  questionId    String
+  selectedAnswer String?
+  correct       Boolean
+  timeSpentSec  Int
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([questionId])
+}
+
+model ExamSession {
+  id            String   @id @default(cuid())
+  userId        String
+  modeConfigJson Json
+  startedAt     DateTime @default(now())
+  endedAt       DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examSessionQuestions ExamSessionQuestion[]
+}
+
+model ExamSessionQuestion {
+  id            String   @id @default(cuid())
+  sessionId     String
+  questionId    String
+  order         Int
+  selectedAnswer String?
+  correct       Boolean?
+
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model SpacedRepetitionSchedule {
+  id            String   @id @default(cuid())
+  userId        String
+  questionId    String
+  dueAt         DateTime
+  intervalDays  Int
+  easeFactor    Float
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String
+  metadataJson Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("ActorLogs", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([targetType])
+}
+
+model UsageCounter {
+  id          String   @id @default(cuid())
+  userId      String
+  day         DateTime
+  uploads     Int      @default(0)
+  questions   Int      @default(0)
+  storageBytes BigInt  @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+}
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(0)
+  resetAt   DateTime
+}

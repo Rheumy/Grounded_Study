@@ -1,0 +1,11 @@
+node_modules
+.next
+.env
+.env.local
+.env.development
+.env.production
+uploads
+.DS_Store
+*.log
+coverage
+playwright-report

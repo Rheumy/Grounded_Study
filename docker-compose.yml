@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  db:
+    image: pgvector/pgvector:0.7.4-pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: grounded_study
+    volumes:
+      - grounded_study_db:/var/lib/postgresql/data
+
+volumes:
+  grounded_study_db:
