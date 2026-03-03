@@ -1,32 +1,45 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+
+// Define mocks *inside* the mock factories (because vi.mock is hoisted)
+vi.mock("@/lib/db/prisma", () => {
+  return {
+    prisma: {
+      document: {
+        findUnique: vi.fn(),
+        delete: vi.fn()
+      }
+    }
+  };
+});
+
+vi.mock("@/lib/storage/storage", () => {
+  return {
+    deleteFile: vi.fn()
+  };
+});
+
+import { prisma } from "@/lib/db/prisma";
+import { deleteFile } from "@/lib/storage/storage";
 import { deleteDocument } from "@/lib/documents/delete";
 
-const mockFind = vi.fn();
-const mockDelete = vi.fn();
-const mockDeleteFile = vi.fn();
-
-vi.mock("@/lib/db/prisma", () => ({
-  prisma: {
-    document: {
-      findUnique: mockFind,
-      delete: mockDelete
-    }
-  }
-}));
-
-vi.mock("@/lib/storage/storage", () => ({
-  deleteFile: mockDeleteFile
-}));
-
 describe("deleteDocument", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("deletes document and file", async () => {
-    mockFind.mockResolvedValue({ id: "doc1", ownerId: "user1", storageKey: "path" });
-    mockDelete.mockResolvedValue({ id: "doc1" });
-    mockDeleteFile.mockResolvedValue(undefined);
+    (prisma.document.findUnique as any).mockResolvedValue({
+      id: "doc1",
+      ownerId: "user1",
+      storageKey: "path"
+    });
+    (prisma.document.delete as any).mockResolvedValue({ id: "doc1" });
+    (deleteFile as any).mockResolvedValue(undefined);
 
     const result = await deleteDocument("doc1", "user1");
+
     expect(result).toBe(true);
-    expect(mockDelete).toHaveBeenCalled();
-    expect(mockDeleteFile).toHaveBeenCalledWith("path");
+    expect(prisma.document.delete).toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith("path");
   });
 });
