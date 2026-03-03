@@ -9,3 +9,5 @@ uploads
 *.log
 coverage
 playwright-report
+tsconfig.tsbuildinfo
+test-results/
