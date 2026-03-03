@@ -1,9 +1,8 @@
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
-
+import * as pdfjsLib from 'pdfjs-dist';
 export type PdfPageText = { page: number; text: string };
 
 export async function extractPdfText(buffer: Buffer, maxPages: number): Promise<PdfPageText[]> {
-  const loadingTask = pdfjs.getDocument({ data: buffer, disableWorker: true });
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
   const pdf = await loadingTask.promise;
   const pages: PdfPageText[] = [];
   const totalPages = Math.min(pdf.numPages, maxPages);

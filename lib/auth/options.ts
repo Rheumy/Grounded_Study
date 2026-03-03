@@ -12,8 +12,10 @@ const devBypassEnabled =
   process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_BYPASS === "true";
 
 export const authOptions: NextAuthOptions = {
+  // @ts-expect-error - NextAuth and PrismaAdapter types often mismatch slightly
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "database" },
+  // NextAuth forces "jwt" strategy when using a Credentials Provider
+  session: { strategy: "jwt" },
   pages: {
     signIn: "/signin"
   },
@@ -31,7 +33,7 @@ export const authOptions: NextAuthOptions = {
               email: { label: "Email", type: "text" }
             },
             async authorize(credentials) {
-              const email = credentials?.email ?? process.env.DEV_AUTH_EMAIL;
+              const email = credentials?.email || process.env.DEV_AUTH_EMAIL;
               if (!email || email !== process.env.DEV_AUTH_EMAIL) {
                 return null;
               }
@@ -40,7 +42,8 @@ export const authOptions: NextAuthOptions = {
                 update: {},
                 create: { email }
               });
-              return { id: user.id, email: user.email };
+              // Ensure ID is passed cleanly
+              return { id: String(user.id), email: user.email };
             }
           })
         ]
@@ -55,10 +58,19 @@ export const authOptions: NextAuthOptions = {
       : [])
   ],
   callbacks: {
-    async session({ session, user }) {
+    // 1. Pass the user ID into the JWT token during sign in
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    // 2. Pass the ID from the token into the active session
+    async session({ session, token }) {
       if (session.user) {
-        session.user.id = user.id;
-        session.user.isAdmin =
+        // 'as any' tells TypeScript to ignore the strict default properties
+        (session.user as any).id = token.id;
+        (session.user as any).isAdmin =
           Boolean(process.env.ADMIN_EMAIL) && session.user.email === process.env.ADMIN_EMAIL;
       }
       return session;

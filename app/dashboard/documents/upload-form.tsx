@@ -13,27 +13,50 @@ export function UploadForm() {
     event.preventDefault();
     setError(null);
     setLoading(true);
-    const form = new FormData(event.currentTarget);
 
-    const response = await fetch("/api/documents/upload", {
-      method: "POST",
-      body: form
-    });
+    // Capture the form element immediately (before any await)
+    const formEl = event.currentTarget;
+    const formData = new FormData(formEl);
 
-    setLoading(false);
+    try {
+      const response = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData
+      });
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      setError(body.error ?? "Upload failed");
-      return;
+      if (!response.ok) {
+        // Handle both JSON and non-JSON error bodies safely
+        const contentType = response.headers.get("content-type") || "";
+        let message = "Upload failed";
+
+        if (contentType.includes("application/json")) {
+          const body = await response.json().catch(() => ({} as any));
+          message = body?.error ?? message;
+        } else {
+          const text = await response.text().catch(() => "");
+          if (text) message = text;
+        }
+
+        setError(message);
+        return;
+      }
+
+      // Reset using the captured form element (avoids currentTarget being null)
+      formEl.reset();
+      router.refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
-
-    event.currentTarget.reset();
-    router.refresh();
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border border-dashed border-ink/20 bg-white p-4">
+    <form
+      onSubmit={submit}
+      className="flex flex-col gap-3 rounded-lg border border-dashed border-ink/20 bg-white p-4"
+    >
       <input name="file" type="file" accept="application/pdf,text/plain,image/*" required />
       <Button type="submit" disabled={loading}>
         {loading ? "Uploading..." : "Upload"}

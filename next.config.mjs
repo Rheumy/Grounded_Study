@@ -9,7 +9,7 @@ const csp = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
-  `script-src 'self'${isProd ? "" : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "connect-src 'self' https://api.openai.com",
   "frame-src 'none'"
 ].join("; ");
@@ -19,6 +19,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
+    serverComponentsExternalPackages: ['pino', 'pino-pretty'],
     serverActions: {
       allowedOrigins: []
     }

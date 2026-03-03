@@ -28,7 +28,7 @@ export async function retrieveChunks(params: {
     SELECT "id", "documentId", "content", "page", "chunkIndex"
     FROM "DocumentChunk"
     WHERE "documentId" IN (${ids})
-    ORDER BY "embedding" <-> ${Prisma.raw(vectorLiteral)}::vector
+    ORDER BY "embedding" <-> ${vectorLiteral}::vector
     LIMIT ${limit}
   `;
 

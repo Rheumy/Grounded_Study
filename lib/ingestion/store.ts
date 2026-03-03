@@ -12,14 +12,14 @@ export type ChunkInsert = {
 };
 
 export async function insertChunk(chunk: ChunkInsert): Promise<DocumentChunk | null> {
-  const vectorLiteral = `[${chunk.embedding.join(",")}]`;
+  const vectorLiteral = JSON.stringify(chunk.embedding); // e.g. "[0.1,0.2,...]"
   const result = await prisma.$executeRaw`
     INSERT INTO "DocumentChunk" ("id", "documentId", "content", "embedding", "page", "chunkIndex", "hash", "createdAt")
     VALUES (
       ${chunk.id},
       ${chunk.documentId},
       ${chunk.content},
-      ${Prisma.raw(vectorLiteral)}::vector,
+      ${vectorLiteral}::vector,
       ${chunk.page ?? null},
       ${chunk.chunkIndex},
       ${chunk.hash},

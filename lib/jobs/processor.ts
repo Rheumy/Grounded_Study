@@ -35,16 +35,16 @@ export async function processIngestionJob(jobId: string) {
 
     logger.info({ jobId, documentId: document.id, chunkCount }, "Job processed");
   } catch (error) {
-    const message = error instanceof Error ? error.message : \"Unknown error\";
-    if (document.sourceType === \"IMAGE\" && message.includes(\"OpenAI API key\")) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    if (document.sourceType === "IMAGE" && message.includes("OpenAI API key")) {
       await prisma.document.update({
         where: { id: document.id },
-        data: { status: \"OCR_DISABLED\" }
+        data: { status: "OCR_DISABLED" }
       });
     } else {
       await prisma.document.update({
         where: { id: document.id },
-        data: { status: \"FAILED\" }
+        data: { status: "FAILED" }
       });
     }
     throw error;
