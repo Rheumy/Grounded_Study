@@ -90,12 +90,12 @@ export async function generateQuestions(params: {
           difficulty: generated.difficulty,
           type: generated.type,
           stem: generated.stem,
-          optionsJson: generated.options ?? null,
+          optionsJson: generated.options ?? undefined,
           answer: generated.answer,
           rationale: generated.rationale,
           citationsJson: generated.citations,
           verifierStatus: "PASSED",
-          tagsJson: generated.tags ?? null
+          tagsJson: generated.tags ?? undefined
         }
       });
 

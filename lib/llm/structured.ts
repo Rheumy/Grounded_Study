@@ -13,7 +13,7 @@ export async function runStructured<T extends z.ZodTypeAny>(params: {
   const jsonSchema = zodToJsonSchema(params.schema, params.schemaName);
 
   try {
-    const response = await client.responses.create({
+    const response = await (client as any).responses.create({
       model: params.model,
       input: [
         { role: "system", content: params.system },

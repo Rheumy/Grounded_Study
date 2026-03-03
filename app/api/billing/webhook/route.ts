@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getStripeClient, stripeEnabled } from "@/lib/billing/stripe";
 import { prisma } from "@/lib/db/prisma";
 import Stripe from "stripe";
+import type { SubscriptionStatus, PlanTier } from "@prisma/client";
 
-const statusMap: Record<string, string> = {
+const statusMap: Record<string, SubscriptionStatus> = {
   active: "ACTIVE",
   trialing: "TRIALING",
   past_due: "PAST_DUE",
@@ -32,24 +33,28 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(payload, signature, secret);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   if (event.type.startsWith("customer.subscription")) {
-    const subscription = event.data.object as Stripe.Subscription;
-    const customerId = subscription.customer as string;
-    const status = statusMap[subscription.status] ?? "INCOMPLETE";
-    const plan = subscription.status === "active" || subscription.status === "trialing" ? "PRO" : "FREE";
+    const sub = event.data.object as Stripe.Subscription;
+    const customerId = sub.customer as string;
 
-    const record = await prisma.subscription.findFirst({ where: { stripeCustomerId: customerId } });
+    const status: SubscriptionStatus = statusMap[sub.status] ?? "INCOMPLETE";
+    const plan: PlanTier = sub.status === "active" || sub.status === "trialing" ? "PRO" : "FREE";
+
+    const record = await prisma.subscription.findFirst({
+      where: { stripeCustomerId: customerId }
+    });
+
     if (record) {
       await prisma.subscription.update({
         where: { id: record.id },
         data: {
           status,
           plan,
-          stripeSubId: subscription.id
+          stripeSubId: sub.id
         }
       });
     }

@@ -15,7 +15,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body className="min-h-screen font-body">
-        {/* @ts-expect-error Async Server Component */}
         <SiteNav />
         <main className="mx-auto w-full max-w-6xl px-6 py-10">{children}</main>
       </body>

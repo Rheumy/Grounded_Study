@@ -24,7 +24,7 @@ export async function saveFile(
   }
 
   if (isBlobEnabled()) {
-    const blob = await put(storageKey, buffer, { access: "private", contentType });
+    const blob = await put(storageKey, buffer, { access: "private" as any, contentType });
     return { storageKey: blob.pathname, contentType, size: buffer.length };
   }
 

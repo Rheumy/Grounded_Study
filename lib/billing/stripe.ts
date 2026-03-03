@@ -10,6 +10,6 @@ export function getStripeClient() {
     throw new Error("Stripe is not configured");
   }
   return new Stripe(key, {
-    apiVersion: "2024-06-20"
+    apiVersion: "2024-04-10"
   });
 }

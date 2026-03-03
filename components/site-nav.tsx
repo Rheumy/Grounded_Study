@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/options";
 import { Button } from "@/components/ui/button";
 

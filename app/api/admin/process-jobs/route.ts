@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/options";
 import { claimNextIngestionJob, markJobCompleted, markJobFailed } from "@/lib/jobs/queue";
 import { processIngestionJob } from "@/lib/jobs/processor";
