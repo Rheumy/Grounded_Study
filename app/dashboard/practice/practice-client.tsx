@@ -38,7 +38,18 @@ export function PracticeClient() {
   };
 
   useEffect(() => {
-    loadQuestion();
+    async function syncQuestion() {
+      setStatus("Loading question...");
+      setFeedback(null);
+      setAnswer("");
+      const response = await fetch(`/api/practice/next?recycle=${recycle}`);
+      const body = await response.json();
+      setQuestion(body.question ?? null);
+      setStatus(body.question ? null : body.message ?? "No questions available");
+      setStartTime(Date.now());
+    }
+
+    void syncQuestion();
   }, [recycle]);
 
   const submit = async () => {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/options";
 import { Button } from "@/components/ui/button";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export async function SiteNav() {
   const session = await getServerSession(authOptions);
@@ -20,11 +21,7 @@ export async function SiteNav() {
             Dashboard
           </Link>
           {session ? (
-            <form action="/api/auth/signout" method="post">
-              <Button variant="outline" size="sm" type="submit">
-                Sign out
-              </Button>
-            </form>
+            <SignOutButton />
           ) : (
             <Link href="/signin">
               <Button size="sm">Sign in</Button>

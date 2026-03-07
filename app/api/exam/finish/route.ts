@@ -17,26 +17,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing session" }, { status: 400 });
   }
 
-  const session = await prisma.examSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.examSession.findUnique({
+    where: { id: sessionId },
+    include: {
+      examSessionQuestions: {
+        include: { question: true },
+        orderBy: { order: "asc" }
+      }
+    }
+  });
   if (!session || session.userId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const assignedQuestionIds = new Set(session.examSessionQuestions.map((item) => item.questionId));
+  const invalidQuestionId = answers.find((answer) => !assignedQuestionIds.has(answer.questionId));
+  if (invalidQuestionId) {
+    return NextResponse.json({ error: "Answer contains a question not assigned to this exam" }, { status: 400 });
+  }
+
+  const answersByQuestionId = new Map(
+    answers.map((answer) => [answer.questionId, answer.selectedAnswer] as const)
+  );
+
   let correctCount = 0;
 
-  for (const answer of answers) {
-    const question = await prisma.question.findUnique({ where: { id: answer.questionId } });
-    if (!question) continue;
+  for (const sessionQuestion of session.examSessionQuestions) {
+    const question = sessionQuestion.question;
+    const selectedAnswer = answersByQuestionId.get(question.id) ?? null;
 
     let correct = false;
-    if (question.type === "MCQ") {
-      correct = answer.selectedAnswer === question.answer;
-    } else {
+    if (selectedAnswer && question.type === "MCQ") {
+      correct = selectedAnswer === question.answer;
+    } else if (selectedAnswer) {
       try {
         const grade = await gradeShortAnswer({
           question: question.stem,
           expectedAnswer: question.answer,
-          studentAnswer: answer.selectedAnswer,
+          studentAnswer: selectedAnswer,
           citations: (question.citationsJson as any[]) ?? []
         });
         correct = grade.verdict === "CORRECT";
@@ -49,7 +67,7 @@ export async function POST(request: Request) {
 
     await prisma.examSessionQuestion.updateMany({
       where: { sessionId: session.id, questionId: question.id },
-      data: { selectedAnswer: answer.selectedAnswer, correct }
+      data: { selectedAnswer, correct }
     });
   }
 
@@ -60,6 +78,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     correct: correctCount,
-    total: answers.length
+    total: session.examSessionQuestions.length
   });
 }

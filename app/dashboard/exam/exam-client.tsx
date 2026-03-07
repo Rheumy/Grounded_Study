@@ -30,10 +30,35 @@ export function ExamClient() {
   }, [timer]);
 
   useEffect(() => {
-    if (timer === 0) {
-      finishExam();
+    if (timer !== 0 || !sessionId) return;
+
+    async function submitExpiredExam() {
+      setStatus("Submitting exam...");
+      const answerList = Object.entries(answers).map(([questionId, selectedAnswer]) => ({
+        questionId,
+        selectedAnswer
+      }));
+
+      const response = await fetch("/api/exam/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, answers: answerList })
+      });
+
+      const body = await response.json();
+      if (!response.ok) {
+        setStatus(body.error ?? "Failed to submit exam");
+        return;
+      }
+
+      setStatus(`Score: ${body.correct}/${body.total}`);
+      setSessionId(null);
+      setQuestions([]);
+      setTimer(null);
     }
-  }, [timer]);
+
+    void submitExpiredExam();
+  }, [answers, sessionId, timer]);
 
   const startExam = async () => {
     setStatus("Starting exam...");

@@ -7,5 +7,5 @@ export default withAuth({
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/((?!auth|billing/webhook).*)"]
+  matcher: ["/dashboard/:path*", "/api/((?!auth|billing/webhook|admin/process-jobs).*)"]
 };
