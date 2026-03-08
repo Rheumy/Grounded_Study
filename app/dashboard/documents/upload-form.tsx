@@ -1,10 +1,21 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-export function UploadForm() {
+function sanitizeFilename(filename: string) {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+}
+
+export function UploadForm({
+  userId,
+  useClientUploads
+}: {
+  userId: string;
+  useClientUploads: boolean;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -17,12 +28,41 @@ export function UploadForm() {
     // Capture the form element immediately (before any await)
     const formEl = event.currentTarget;
     const formData = new FormData(formEl);
+    const file = formData.get("file");
 
     try {
-      const response = await fetch("/api/documents/upload", {
-        method: "POST",
-        body: formData
-      });
+      if (!file || !(file instanceof File)) {
+        setError("File missing");
+        return;
+      }
+
+      let response: Response;
+      if (useClientUploads) {
+        const documentId = crypto.randomUUID();
+        const storageKey = `${userId}/${documentId}/${sanitizeFilename(file.name)}`;
+        const blob = await upload(storageKey, file, {
+          access: "public",
+          contentType: file.type || undefined,
+          handleUploadUrl: "/api/documents/blob",
+          multipart: file.size > 4_500_000
+        });
+
+        response = await fetch("/api/documents/upload", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            storageKey: blob.pathname,
+            fileName: file.name
+          })
+        });
+      } else {
+        response = await fetch("/api/documents/upload", {
+          method: "POST",
+          body: formData
+        });
+      }
 
       if (!response.ok) {
         // Handle both JSON and non-JSON error bodies safely

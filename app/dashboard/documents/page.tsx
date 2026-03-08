@@ -25,7 +25,10 @@ export default async function DocumentsPage() {
           <CardDescription>PDFs and images are ingested into your grounded knowledge base.</CardDescription>
         </CardHeader>
         <CardContent>
-          <UploadForm />
+          <UploadForm
+            userId={user.id}
+            useClientUploads={Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.VERCEL)}
+          />
         </CardContent>
       </Card>
 

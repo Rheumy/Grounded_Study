@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { put, del, head } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 
 export type StoredFile = {
   storageKey: string;
@@ -24,7 +24,7 @@ export async function saveFile(
   }
 
   if (isBlobEnabled()) {
-    const blob = await put(storageKey, buffer, { access: "private" as any, contentType });
+    const blob = await put(storageKey, buffer, { access: "private", contentType });
     return { storageKey: blob.pathname, contentType, size: buffer.length };
   }
 
@@ -36,12 +36,21 @@ export async function saveFile(
 
 export async function readFile(storageKey: string): Promise<Buffer> {
   if (isBlobEnabled()) {
-    const { url } = await head(storageKey);
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error("Unable to read blob file.");
+    const accessModes: Array<"private" | "public"> = ["private", "public"];
+
+    for (const access of accessModes) {
+      try {
+        const response = await get(storageKey, { access });
+        if (response && response.statusCode === 200 && response.stream) {
+          const blobBuffer = await new Response(response.stream).arrayBuffer();
+          return Buffer.from(blobBuffer);
+        }
+      } catch {
+        // Fall through to the next access mode.
+      }
     }
-    return Buffer.from(await response.arrayBuffer());
+
+    throw new Error("Unable to read blob file.");
   }
 
   const fullPath = path.join(uploadsDir, storageKey);

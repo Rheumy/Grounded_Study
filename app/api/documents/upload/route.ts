@@ -5,8 +5,51 @@ import { prisma } from "@/lib/db/prisma";
 import { validateUpload } from "@/lib/security/file-validation";
 import { sanitizeFilename } from "@/lib/security/sanitize";
 import { rateLimit } from "@/lib/security/rate-limit";
-import { saveFile } from "@/lib/storage/storage";
+import { deleteFile, readFile, saveFile } from "@/lib/storage/storage";
 import { enforceUploadLimit, incrementUsage } from "@/lib/billing/usage";
+
+async function createDocumentFromValidatedUpload(params: {
+  ownerId: string;
+  fileName: string;
+  storageKey: string;
+  sizeBytes: number;
+  fileInfo: { kind: "pdf" | "image" | "text"; mime: string };
+}) {
+  const existing = await prisma.document.findFirst({
+    where: { ownerId: params.ownerId, storageKey: params.storageKey }
+  });
+  if (existing) {
+    return existing;
+  }
+
+  const document = await prisma.document.create({
+    data: {
+      id: crypto.randomUUID(),
+      ownerId: params.ownerId,
+      title: params.fileName,
+      sourceType:
+        params.fileInfo.kind === "pdf"
+          ? "PDF"
+          : params.fileInfo.kind === "text"
+            ? "TEXT"
+            : "IMAGE",
+      contentType: params.fileInfo.mime,
+      storageKey: params.storageKey,
+      status: "QUEUED"
+    }
+  });
+
+  await prisma.ingestionJob.create({
+    data: {
+      documentId: document.id,
+      status: "QUEUED"
+    }
+  });
+
+  await incrementUsage({ userId: params.ownerId, uploads: 1, storageBytes: params.sizeBytes });
+
+  return document;
+}
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -17,6 +60,65 @@ export async function POST(request: Request) {
   const limiter = await rateLimit(`upload:${user.id}`, 10, 60_000);
   if (!limiter.allowed) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+  }
+
+  const requestType = request.headers.get("content-type") ?? "";
+
+  if (requestType.includes("application/json")) {
+    const body = await request.json().catch(() => null);
+    const storageKey = typeof body?.storageKey === "string" ? body.storageKey : "";
+    const fileName = typeof body?.fileName === "string" ? body.fileName : "";
+
+    if (!storageKey || !fileName) {
+      return NextResponse.json({ error: "Upload metadata missing" }, { status: 400 });
+    }
+
+    if (!storageKey.startsWith(`${user.id}/`)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const existing = await prisma.document.findFirst({
+      where: { ownerId: user.id, storageKey }
+    });
+    if (existing) {
+      return NextResponse.json({ documentId: existing.id, status: existing.status });
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(storageKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to access uploaded file";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    const validation = await validateUpload(buffer, fileName, buffer.length);
+    if (!validation.allowed || !validation.fileInfo) {
+      await deleteFile(storageKey).catch(() => undefined);
+      return NextResponse.json({ error: validation.error ?? "Invalid upload" }, { status: 400 });
+    }
+
+    try {
+      await enforceUploadLimit(user.id, buffer.length);
+    } catch (error) {
+      await deleteFile(storageKey).catch(() => undefined);
+      const message = error instanceof Error ? error.message : "Upload limit reached";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    try {
+      const document = await createDocumentFromValidatedUpload({
+        ownerId: user.id,
+        fileName,
+        storageKey,
+        sizeBytes: buffer.length,
+        fileInfo: validation.fileInfo
+      });
+      return NextResponse.json({ documentId: document.id, status: document.status });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
   }
 
   const formData = await request.formData();
@@ -49,31 +151,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const document = await prisma.document.create({
-    data: {
-      id: docId,
-      ownerId: user.id,
-      title: file.name,
-      sourceType:
-        validation.fileInfo.kind === "pdf"
-          ? "PDF"
-          : validation.fileInfo.kind === "text"
-            ? "TEXT"
-            : "IMAGE",
-      contentType: validation.fileInfo.mime,
-      storageKey,
-      status: "QUEUED"
-    }
+  const document = await createDocumentFromValidatedUpload({
+    ownerId: user.id,
+    fileName: file.name,
+    storageKey,
+    sizeBytes: buffer.length,
+    fileInfo: validation.fileInfo
   });
-
-  await prisma.ingestionJob.create({
-    data: {
-      documentId: document.id,
-      status: "QUEUED"
-    }
-  });
-
-  await incrementUsage({ userId: user.id, uploads: 1, storageBytes: buffer.length });
 
   return NextResponse.json({ documentId: document.id, status: document.status });
 }
