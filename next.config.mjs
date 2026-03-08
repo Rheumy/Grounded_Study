@@ -10,7 +10,7 @@ const csp = [
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
-  "connect-src 'self' https://api.openai.com",
+  "connect-src 'self' https://api.openai.com https://vercel.com https://blob.vercel-storage.com https://*.blob.vercel-storage.com",
   "frame-src 'none'"
 ].join("; ");
 

@@ -20,6 +20,20 @@ export function UploadForm({
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  async function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), ms);
+        })
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -40,12 +54,16 @@ export function UploadForm({
       if (useClientUploads) {
         const documentId = crypto.randomUUID();
         const storageKey = `${userId}/${documentId}/${sanitizeFilename(file.name)}`;
-        const blob = await upload(storageKey, file, {
-          access: "public",
-          contentType: file.type || undefined,
-          handleUploadUrl: "/api/documents/blob",
-          multipart: file.size > 4_500_000
-        });
+        const blob = await withTimeout(
+          upload(storageKey, file, {
+            access: "public",
+            contentType: file.type || undefined,
+            handleUploadUrl: "/api/documents/blob",
+            multipart: file.size > 4_500_000
+          }),
+          120_000,
+          "Blob upload did not start or complete in time. Check the browser console and network panel for blocked requests."
+        );
 
         response = await fetch("/api/documents/upload", {
           method: "POST",
@@ -86,6 +104,7 @@ export function UploadForm({
       router.refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload failed";
+      console.error("Upload failed", e);
       setError(msg);
     } finally {
       setLoading(false);
