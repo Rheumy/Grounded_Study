@@ -7,6 +7,7 @@ import { sanitizeFilename } from "@/lib/security/sanitize";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { deleteFile, readFile, saveFile } from "@/lib/storage/storage";
 import { enforceUploadLimit, incrementUsage } from "@/lib/billing/usage";
+import { logger } from "@/lib/observability/logger";
 
 async function createDocumentFromValidatedUpload(params: {
   ownerId: string;
@@ -89,12 +90,17 @@ export async function POST(request: Request) {
       buffer = await readFile(storageKey);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to access uploaded file";
+      logger.error({ userId: user.id, storageKey, message }, "Upload finalize read failed");
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const validation = await validateUpload(buffer, fileName, buffer.length);
     if (!validation.allowed || !validation.fileInfo) {
       await deleteFile(storageKey).catch(() => undefined);
+      logger.error(
+        { userId: user.id, storageKey, fileName, message: validation.error ?? "Invalid upload" },
+        "Upload finalize validation failed"
+      );
       return NextResponse.json({ error: validation.error ?? "Invalid upload" }, { status: 400 });
     }
 
@@ -103,6 +109,7 @@ export async function POST(request: Request) {
     } catch (error) {
       await deleteFile(storageKey).catch(() => undefined);
       const message = error instanceof Error ? error.message : "Upload limit reached";
+      logger.error({ userId: user.id, storageKey, fileName, message }, "Upload finalize limit check failed");
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
@@ -114,9 +121,14 @@ export async function POST(request: Request) {
         sizeBytes: buffer.length,
         fileInfo: validation.fileInfo
       });
+      logger.info(
+        { userId: user.id, storageKey, documentId: document.id, status: document.status },
+        "Upload finalize completed"
+      );
       return NextResponse.json({ documentId: document.id, status: document.status });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload failed";
+      logger.error({ userId: user.id, storageKey, fileName, message }, "Upload finalize persistence failed");
       return NextResponse.json({ error: message }, { status: 400 });
     }
   }

@@ -1,12 +1,27 @@
 "use client";
 
-import { upload } from "@vercel/blob/client";
+import { put } from "@vercel/blob/client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+}
+
+type BlobInitResponse = {
+  clientToken: string;
+};
+
+async function parseErrorResponse(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const body = await response.json().catch(() => ({} as { error?: string }));
+    return body.error ?? fallback;
+  }
+
+  const text = await response.text().catch(() => "");
+  return text || fallback;
 }
 
 export function UploadForm({
@@ -54,16 +69,85 @@ export function UploadForm({
       if (useClientUploads) {
         const documentId = crypto.randomUUID();
         const storageKey = `${userId}/${documentId}/${sanitizeFilename(file.name)}`;
-        const blob = await withTimeout(
-          upload(storageKey, file, {
-            access: "public",
-            contentType: file.type || undefined,
-            handleUploadUrl: "/api/documents/blob",
-            multipart: file.size > 4_500_000
-          }),
-          120_000,
-          "Blob upload did not start or complete in time. Check the browser console and network panel for blocked requests."
-        );
+        const multipart = file.size > 4_500_000;
+        console.info("Starting blob upload init", {
+          storageKey,
+          fileName: file.name,
+          fileType: file.type || null,
+          fileSize: file.size,
+          multipart
+        });
+
+        const initResponse = await fetch("/api/documents/blob", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            type: "blob.generate-client-token",
+            payload: {
+              pathname: storageKey,
+              clientPayload: null,
+              multipart
+            }
+          })
+        });
+
+        if (!initResponse.ok) {
+          const message = await parseErrorResponse(
+            initResponse,
+            "Blob upload initialization failed."
+          );
+          console.error("Blob upload init failed", {
+            storageKey,
+            status: initResponse.status,
+            message
+          });
+          setError(message);
+          return;
+        }
+
+        const initJson = (await initResponse.json().catch(() => null)) as BlobInitResponse | null;
+        if (!initJson?.clientToken) {
+          console.error("Blob upload init returned an unexpected response", {
+            storageKey,
+            body: initJson
+          });
+          setError("Blob upload initialization returned an invalid response.");
+          return;
+        }
+
+        console.info("Blob upload token issued", { storageKey, multipart });
+
+        let blob;
+        try {
+          blob = await withTimeout(
+            put(storageKey, file, {
+              access: "private",
+              token: initJson.clientToken,
+              multipart
+            }),
+            120_000,
+            "Blob upload did not complete in time."
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Blob upload failed before finalization.";
+          console.error("Blob upload failed", {
+            storageKey,
+            fileName: file.name,
+            fileType: file.type || null,
+            error
+          });
+          setError(
+            `Blob upload failed. ${message} Check the browser console and network panel for the failing Blob request.`
+          );
+          return;
+        }
+
+        console.info("Blob upload completed, starting finalize", {
+          storageKey: blob.pathname
+        });
 
         response = await fetch("/api/documents/upload", {
           method: "POST",
@@ -83,22 +167,16 @@ export function UploadForm({
       }
 
       if (!response.ok) {
-        // Handle both JSON and non-JSON error bodies safely
-        const contentType = response.headers.get("content-type") || "";
-        let message = "Upload failed";
-
-        if (contentType.includes("application/json")) {
-          const body = await response.json().catch(() => ({} as any));
-          message = body?.error ?? message;
-        } else {
-          const text = await response.text().catch(() => "");
-          if (text) message = text;
-        }
-
+        const message = await parseErrorResponse(response, "Upload failed");
+        console.error("Upload finalize failed", {
+          status: response.status,
+          message
+        });
         setError(message);
         return;
       }
 
+      console.info("Upload finalize completed");
       // Reset using the captured form element (avoids currentTarget being null)
       formEl.reset();
       router.refresh();
@@ -115,9 +193,16 @@ export function UploadForm({
     <form
       onSubmit={submit}
       className="flex flex-col gap-3 rounded-lg border border-dashed border-ink/20 bg-white p-4"
+      data-testid="document-upload-form"
     >
-      <input name="file" type="file" accept="application/pdf,text/plain,image/*" required />
-      <Button type="submit" disabled={loading}>
+      <input
+        name="file"
+        type="file"
+        accept="application/pdf,text/plain,image/*"
+        required
+        data-testid="document-upload-input"
+      />
+      <Button type="submit" disabled={loading} data-testid="document-upload-submit">
         {loading ? "Uploading..." : "Upload"}
       </Button>
       {error ? <p className="text-xs text-danger">{error}</p> : null}

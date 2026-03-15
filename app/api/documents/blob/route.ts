@@ -3,6 +3,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { sanitizeFilename } from "@/lib/security/sanitize";
+import { logger } from "@/lib/observability/logger";
 
 const DEFAULT_MAX_MB = 20;
 const ALLOWED_CONTENT_TYPES = ["application/pdf", "text/plain", "image/png", "image/jpeg"];
@@ -25,6 +26,10 @@ function validatePathname(pathnameValue: string, userId: string) {
   }
 }
 
+function getEventPathname(body: HandleUploadBody) {
+  return body.type === "blob.generate-client-token" ? body.payload.pathname : body.payload.blob.pathname;
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as HandleUploadBody | null;
   if (!body) {
@@ -32,6 +37,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    logger.info(
+      {
+        uploadEventType: body.type,
+        pathname: getEventPathname(body)
+      },
+      "Handling Blob upload event"
+    );
+
     const jsonResponse = await handleUpload({
       token: process.env.BLOB_READ_WRITE_TOKEN,
       request,
@@ -60,6 +73,14 @@ export async function POST(request: Request) {
     return NextResponse.json(jsonResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload setup failed";
+    logger.error(
+      {
+        uploadEventType: body.type,
+        pathname: getEventPathname(body),
+        message
+      },
+      "Blob upload event failed"
+    );
     const status = message === "Unauthorized" ? 401 : 400;
     return NextResponse.json({ error: message }, { status });
   }
