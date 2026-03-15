@@ -5,8 +5,8 @@ export default function PracticePage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Practice mode</CardTitle>
-        <CardDescription>Instant feedback with citations and spaced repetition.</CardDescription>
+        <CardTitle>Practice questions</CardTitle>
+        <CardDescription>Review your questions with feedback and revision tracking.</CardDescription>
       </CardHeader>
       <CardContent>
         <PracticeClient />

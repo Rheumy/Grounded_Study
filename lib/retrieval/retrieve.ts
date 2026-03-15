@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { embedText } from "@/lib/llm/embeddings";
+import { logger } from "@/lib/observability/logger";
 
 export type RetrievedChunk = {
   id: string;
@@ -15,6 +16,15 @@ export async function retrieveChunks(params: {
   documentIds: string[];
   limit?: number;
 }): Promise<RetrievedChunk[]> {
+  logger.info(
+    {
+      documentCount: params.documentIds.length,
+      queryLength: params.query.length,
+      limit: params.limit ?? 6
+    },
+    "Retrieval invoked"
+  );
+
   const vector = await embedText(params.query);
   const vectorLiteral = `[${vector.join(",")}]`;
   const limit = params.limit ?? 6;
@@ -31,6 +41,15 @@ export async function retrieveChunks(params: {
     ORDER BY "embedding" <-> ${vectorLiteral}::vector
     LIMIT ${limit}
   `;
+
+  logger.info(
+    {
+      documentCount: params.documentIds.length,
+      returnedChunkCount: results.length,
+      limit
+    },
+    "Retrieval returned chunks"
+  );
 
   return results;
 }

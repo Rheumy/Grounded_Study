@@ -14,8 +14,11 @@ export default async function StyleProfilesPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Create a style profile</CardTitle>
-          <CardDescription>Extract question style preferences from samples.</CardDescription>
+          <CardTitle>Create a question format</CardTitle>
+          <CardDescription>
+            Shape how your questions should look by uploading sample questions, past exam items,
+            marking guides, or by describing the format in your own words.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <StyleProfileForm />
@@ -24,12 +27,15 @@ export default async function StyleProfilesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Profiles</CardTitle>
-          <CardDescription>Generated profiles are used to shape questions.</CardDescription>
+          <CardTitle>Saved question formats</CardTitle>
+          <CardDescription>Choose one of these when generating new questions.</CardDescription>
         </CardHeader>
         <CardContent>
           {profiles.length === 0 ? (
-            <p className="text-sm text-ink/60">No profiles created yet.</p>
+            <p className="text-sm text-ink/60">
+              No custom question formats yet. The default format is available if you want to get
+              started straight away.
+            </p>
           ) : (
             <ul className="space-y-2 text-sm">
               {profiles.map((profile) => (

@@ -68,8 +68,9 @@ export function PracticeClient() {
     <div className="space-y-4">
       <label className="flex items-center gap-2 text-sm text-ink/70">
         <input type="checkbox" checked={recycle} onChange={() => setRecycle(!recycle)} />
-        Recycle due questions
+        Include questions due for review
       </label>
+      <p className="text-sm text-ink/60">Bring back older questions that are scheduled for revision.</p>
 
       {question ? (
         <div className="space-y-4">
@@ -99,7 +100,11 @@ export function PracticeClient() {
           </Button>
         </div>
       ) : (
-        <p className="text-sm text-ink/60">{status ?? "No question"}</p>
+        <p className="text-sm text-ink/60">
+          {status === "No questions available"
+            ? "No questions yet. Generate questions first, then come back here to practise them."
+            : status ?? "No questions yet. Generate questions first, then come back here to practise them."}
+        </p>
       )}
 
       {feedback ? (

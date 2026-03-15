@@ -8,21 +8,24 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-ink">Welcome back</h1>
-        <p className="text-ink/60">Signed in as {session?.user?.email}</p>
+        <h1 className="text-2xl font-semibold text-ink">Welcome to Grounded Study</h1>
+        <p className="text-ink/60">
+          Turn your study materials into exam-style questions for revision, practice, and mock exams.
+        </p>
+        <p className="text-sm text-ink/50">Signed in as {session?.user?.email}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { title: "Documents", description: "Track upload and ingestion progress." },
-          { title: "Questions", description: "Generate grounded questions with citations." },
-          { title: "Analytics", description: "See accuracy by topic and difficulty." }
+          { title: "Study Materials", description: "Upload and track the materials behind your questions." },
+          { title: "Generate Questions", description: "Create new revision questions from ready study materials." },
+          { title: "Progress", description: "See how you are performing over time." }
         ].map((card) => (
           <Card key={card.title}>
             <CardHeader>
               <CardTitle>{card.title}</CardTitle>
               <CardDescription>{card.description}</CardDescription>
             </CardHeader>
-            <CardContent className="text-sm text-ink/60">More details coming in Slice 4.</CardContent>
+            <CardContent className="text-sm text-ink/60">Open this section from the sidebar to continue.</CardContent>
           </Card>
         ))}
       </div>

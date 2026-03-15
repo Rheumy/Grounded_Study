@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/options";
-import { claimNextIngestionJob, markJobCompleted, markJobFailed } from "@/lib/jobs/queue";
-import { processIngestionJob } from "@/lib/jobs/processor";
 import { logger } from "@/lib/observability/logger";
+import { processIngestionJobsBatch } from "@/lib/jobs/run-batch";
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -15,23 +14,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const job = await claimNextIngestionJob();
-  if (!job) {
-    logger.info("Job processing requested but no queued jobs were available");
+  const batch = await processIngestionJobsBatch({ limit: 1, source: "admin" });
+  if (batch.claimed === 0) {
+    logger.info("Manual admin job processing found no queued jobs");
     return NextResponse.json({ ok: true, message: "No jobs" });
   }
 
-  logger.info({ jobId: job.id, documentId: job.documentId }, "Admin job processing started");
-
-  try {
-    await processIngestionJob(job.id);
-    await markJobCompleted(job.id);
-    logger.info({ jobId: job.id, documentId: job.documentId }, "Admin job processing completed");
-    return NextResponse.json({ ok: true, jobId: job.id });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    await markJobFailed(job.id, message);
-    logger.error({ jobId: job.id, documentId: job.documentId, message }, "Admin job processing failed");
-    return NextResponse.json({ ok: false, jobId: job.id, error: message }, { status: 500 });
+  const failedJob = batch.results.find((result) => result.status === "failed");
+  if (failedJob) {
+    return NextResponse.json(
+      { ok: false, jobId: failedJob.jobId, error: failedJob.error ?? "Unknown error" },
+      { status: 500 }
+    );
   }
+
+  return NextResponse.json({ ok: true, jobId: batch.results[0]?.jobId });
 }

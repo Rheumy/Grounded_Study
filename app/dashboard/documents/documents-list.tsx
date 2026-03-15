@@ -25,7 +25,7 @@ export function DocumentsList({ documents }: { documents: Doc[] }) {
   };
 
   if (documents.length === 0) {
-    return <p className="text-sm text-ink/60">No documents yet.</p>;
+    return <p className="text-sm text-ink/60">No study materials uploaded yet.</p>;
   }
 
   return (
@@ -37,6 +37,9 @@ export function DocumentsList({ documents }: { documents: Doc[] }) {
             <div>
               <p className="font-medium text-ink">{doc.title}</p>
               <p className="text-xs text-ink/50">Status: {doc.status}</p>
+              {doc.status === "READY" ? (
+                <p className="text-xs text-ink/60">Ready to use. Next: go to Generate Questions.</p>
+              ) : null}
             </div>
             <button
               className="text-xs text-danger"

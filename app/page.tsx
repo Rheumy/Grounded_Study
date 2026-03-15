@@ -36,7 +36,7 @@ export default function HomePage() {
           <CardContent className="space-y-3 text-sm text-ink/70">
             <p>Upload PDFs, slides, screenshots, or handwritten notes.</p>
             <p>Control difficulty with Bloom-level and distractor tuning.</p>
-            <p>Practice mode, exam mode, analytics, and spaced repetition.</p>
+            <p>Practice questions, mock exams, progress tracking, and spaced revision.</p>
           </CardContent>
         </Card>
       </section>

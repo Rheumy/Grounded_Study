@@ -21,7 +21,7 @@ export default async function GeneratePage() {
     <Card>
       <CardHeader>
         <CardTitle>Generate questions</CardTitle>
-        <CardDescription>Questions are grounded in retrieved chunks and verified.</CardDescription>
+        <CardDescription>Create new questions from your selected study materials.</CardDescription>
       </CardHeader>
       <CardContent>
         <GenerateForm documents={safeDocs} profiles={safeProfiles} />

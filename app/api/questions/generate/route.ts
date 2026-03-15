@@ -3,6 +3,7 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestions } from "@/lib/llm/generate";
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
+import { logger } from "@/lib/observability/logger";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -32,6 +33,18 @@ export async function POST(request: Request) {
   }
 
   try {
+    logger.info(
+      {
+        userId: user.id,
+        selectedDocumentIds: documentIds,
+        readyDocumentCount: documents.length,
+        styleProfileId,
+        difficulty,
+        requestedCount: count
+      },
+      "Generate questions request accepted"
+    );
+
     const results = await generateQuestions({
       ownerId: user.id,
       documentIds: documents.map((doc) => doc.id),
@@ -40,10 +53,36 @@ export async function POST(request: Request) {
       count
     });
     const passed = results.filter((result) => result.status === "PASSED").length;
+    const insufficientEvidence = results.filter(
+      (result) => result.status === "INSUFFICIENT_EVIDENCE"
+    ).length;
     await incrementUsage({ userId: user.id, questions: passed });
+    logger.info(
+      {
+        userId: user.id,
+        readyDocumentCount: documents.length,
+        styleProfileId,
+        difficulty,
+        requestedCount: count,
+        passedCount: passed,
+        insufficientEvidenceCount: insufficientEvidence
+      },
+      "Generate questions request completed"
+    );
     return NextResponse.json({ results });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
+    logger.error(
+      {
+        userId: user.id,
+        selectedDocumentIds: documentIds,
+        styleProfileId,
+        difficulty,
+        requestedCount: count,
+        message
+      },
+      "Generation failed"
+    );
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

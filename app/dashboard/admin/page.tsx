@@ -39,7 +39,7 @@ export default async function AdminPage() {
         </CardHeader>
         <CardContent className="text-sm text-ink/70">
           <p>Users: {userCount}</p>
-          <p>Documents: {documentCount}</p>
+          <p>Study materials: {documentCount}</p>
           <p>Questions: {questionCount}</p>
         </CardContent>
       </Card>

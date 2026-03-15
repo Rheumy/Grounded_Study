@@ -27,6 +27,17 @@ export async function generateQuestions(params: {
   difficulty: number;
   count: number;
 }) {
+  logger.info(
+    {
+      ownerId: params.ownerId,
+      documentCount: params.documentIds.length,
+      styleProfileId: params.styleProfileId,
+      difficulty: params.difficulty,
+      requestedCount: params.count
+    },
+    "Generation started"
+  );
+
   const styleProfile = params.styleProfileId
     ? await prisma.styleProfile.findFirst({ where: { id: params.styleProfileId, ownerId: params.ownerId } })
     : null;
@@ -104,10 +115,26 @@ export async function generateQuestions(params: {
     }
 
     if (!saved) {
-      logger.warn({ reason }, "Question generation failed after retries");
+      logger.warn(
+        { ownerId: params.ownerId, attemptIndex: i + 1, reason },
+        "Question generation failed after retries"
+      );
       results.push({ status: "INSUFFICIENT_EVIDENCE", reason });
     }
   }
+
+  const passed = results.filter((result) => result.status === "PASSED").length;
+  const failed = results.length - passed;
+  logger.info(
+    {
+      ownerId: params.ownerId,
+      documentCount: params.documentIds.length,
+      requestedCount: params.count,
+      passedCount: passed,
+      failedCount: failed
+    },
+    "Generation completed"
+  );
 
   return results;
 }

@@ -28,14 +28,20 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-ink">Progress</h1>
+        <p className="text-ink/60">Track your performance, revision patterns, and weaker areas.</p>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>Accuracy by difficulty</CardTitle>
-          <CardDescription>Practice performance grouped by level.</CardDescription>
+          <CardTitle>Performance by difficulty</CardTitle>
+          <CardDescription>See how you are doing across question difficulty levels.</CardDescription>
         </CardHeader>
         <CardContent>
           {Object.keys(difficultyStats).length === 0 ? (
-            <p className="text-sm text-ink/60">No data yet.</p>
+            <p className="text-sm text-ink/60">
+              No progress data yet. Start practising or complete a mock exam to see your progress.
+            </p>
           ) : (
             <ul className="space-y-2 text-sm">
               {Object.entries(difficultyStats).map(([level, stat]) => (
@@ -50,12 +56,14 @@ export default async function AnalyticsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Accuracy by tag</CardTitle>
-          <CardDescription>Topic coverage and performance.</CardDescription>
+          <CardTitle>Performance by topic</CardTitle>
+          <CardDescription>Review stronger and weaker areas by topic.</CardDescription>
         </CardHeader>
         <CardContent>
           {Object.keys(tagStats).length === 0 ? (
-            <p className="text-sm text-ink/60">No tag data yet.</p>
+            <p className="text-sm text-ink/60">
+              No progress data yet. Start practising or complete a mock exam to see your progress.
+            </p>
           ) : (
             <ul className="space-y-2 text-sm">
               {Object.entries(tagStats).map(([tag, stat]) => (

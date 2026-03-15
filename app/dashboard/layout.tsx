@@ -5,12 +5,12 @@ import Link from "next/link";
 
 const navItems = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/documents", label: "Documents" },
-  { href: "/dashboard/style-profiles", label: "Style Profiles" },
-  { href: "/dashboard/generate", label: "Generate" },
-  { href: "/dashboard/practice", label: "Practice" },
-  { href: "/dashboard/exam", label: "Exam" },
-  { href: "/dashboard/analytics", label: "Analytics" },
+  { href: "/dashboard/documents", label: "Study Materials" },
+  { href: "/dashboard/style-profiles", label: "Question Format" },
+  { href: "/dashboard/generate", label: "Generate Questions" },
+  { href: "/dashboard/practice", label: "Practice Questions" },
+  { href: "/dashboard/exam", label: "Mock Exam" },
+  { href: "/dashboard/analytics", label: "Progress" },
   { href: "/dashboard/billing", label: "Billing" }
 ];
 

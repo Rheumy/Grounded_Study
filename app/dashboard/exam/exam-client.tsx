@@ -74,7 +74,11 @@ export function ExamClient() {
 
     const body = await response.json();
     if (!response.ok) {
-      setStatus(body.error ?? "Unable to start exam");
+      setStatus(
+        body.error === "No questions available"
+          ? "No questions available for a mock exam yet. Generate questions first."
+          : body.error ?? "Unable to start mock exam"
+      );
       return;
     }
 
@@ -157,7 +161,7 @@ export function ExamClient() {
               />
             </label>
           </div>
-          <Button onClick={startExam}>Start exam</Button>
+          <Button onClick={startExam}>Start mock exam</Button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -191,7 +195,7 @@ export function ExamClient() {
               )}
             </div>
           ))}
-          <Button onClick={finishExam}>Submit exam</Button>
+          <Button onClick={finishExam}>Submit mock exam</Button>
         </div>
       )}
 

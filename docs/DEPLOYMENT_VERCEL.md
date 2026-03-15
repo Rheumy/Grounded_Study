@@ -19,10 +19,12 @@ Set at least:
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
 - `ADMIN_EMAIL`
+- `CRON_SECRET`
 
 Optional:
 - `OPENAI_API_KEY` (required for ingestion + generation)
 - `BLOB_READ_WRITE_TOKEN` (enables uploads in production)
+- `CRON_INGESTION_BATCH_SIZE` (defaults to `3` jobs per cron invocation)
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_ENABLED=true`
 
@@ -39,7 +41,8 @@ Optional:
 ## 6. Jobs
 
 - Run worker locally for dev (`pnpm worker`).
-- For Vercel cron, call `/api/admin/process-jobs` with `Authorization: Bearer $ADMIN_JOB_TOKEN`.
+- Manual admin trigger: call `/api/admin/process-jobs` with `Authorization: Bearer $ADMIN_JOB_TOKEN`.
+- Automatic Vercel cron trigger: `/api/cron/process-ingestion` is scheduled via `vercel.json` and authenticated with `CRON_SECRET`.
 
 ## 7. Custom Domain
 

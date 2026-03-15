@@ -203,7 +203,7 @@ export function UploadForm({
         data-testid="document-upload-input"
       />
       <Button type="submit" disabled={loading} data-testid="document-upload-submit">
-        {loading ? "Uploading..." : "Upload"}
+        {loading ? "Uploading..." : "Upload material"}
       </Button>
       {error ? <p className="text-xs text-danger">{error}</p> : null}
     </form>

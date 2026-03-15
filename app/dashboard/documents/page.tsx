@@ -21,8 +21,10 @@ export default async function DocumentsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Upload materials</CardTitle>
-          <CardDescription>PDFs and images are ingested into your grounded knowledge base.</CardDescription>
+          <CardTitle>Upload study materials</CardTitle>
+          <CardDescription>
+            Upload textbooks, lecture notes, handouts, or past papers to build your question bank.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <UploadForm
@@ -34,8 +36,8 @@ export default async function DocumentsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Documents</CardTitle>
-          <CardDescription>Track ingestion status and manage uploads.</CardDescription>
+          <CardTitle>Your study materials</CardTitle>
+          <CardDescription>Track upload and processing status here.</CardDescription>
         </CardHeader>
         <CardContent>
           <DocumentsList documents={safeDocs} />
