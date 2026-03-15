@@ -1,5 +1,20 @@
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import * as pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
 export type PdfPageText = { page: number; text: string };
+
+type PdfWorkerGlobal = typeof globalThis & {
+  pdfjsWorker?: {
+    WorkerMessageHandler?: unknown;
+  };
+};
+
+const pdfWorkerGlobal = globalThis as PdfWorkerGlobal;
+if (!pdfWorkerGlobal.pdfjsWorker?.WorkerMessageHandler) {
+  pdfWorkerGlobal.pdfjsWorker = {
+    WorkerMessageHandler: pdfjsWorker.WorkerMessageHandler
+  };
+}
 
 export async function extractPdfText(buffer: Buffer, maxPages: number): Promise<PdfPageText[]> {
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
