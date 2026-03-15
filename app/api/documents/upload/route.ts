@@ -49,6 +49,17 @@ async function createDocumentFromValidatedUpload(params: {
 
   await incrementUsage({ userId: params.ownerId, uploads: 1, storageBytes: params.sizeBytes });
 
+  logger.info(
+    {
+      userId: params.ownerId,
+      documentId: document.id,
+      storageKey: params.storageKey,
+      sourceType: document.sourceType,
+      status: document.status
+    },
+    "Document queued for ingestion"
+  );
+
   return document;
 }
 

@@ -32,25 +32,45 @@ export async function ingestDocument(params: {
     throw new Error("No extractable text found.");
   }
 
-  let chunkIndex = 0;
+  logger.info(
+    { documentId: params.documentId, sourceType: params.sourceType, pageCount: pages.length },
+    "Text extraction completed"
+  );
+
+  const preparedChunks: Array<{ page: number; chunk: string }> = [];
   for (const page of pages) {
     const chunks = chunkText(page.text, MAX_CHUNK_CHARS, CHUNK_OVERLAP);
     for (const chunk of chunks) {
-      const embedding = await embedText(chunk);
-      const hash = hashChunk(chunk);
-      await insertChunk({
-        id: crypto.randomUUID(),
-        documentId: params.documentId,
-        content: chunk,
-        embedding,
-        page: page.page,
-        chunkIndex,
-        hash
-      });
-      chunkIndex += 1;
+      preparedChunks.push({ page: page.page, chunk });
     }
   }
 
-  logger.info({ documentId: params.documentId, chunkCount: chunkIndex }, "Ingestion complete");
+  logger.info(
+    { documentId: params.documentId, chunkCount: preparedChunks.length },
+    "Chunking completed"
+  );
+
+  let chunkIndex = 0;
+  for (const preparedChunk of preparedChunks) {
+    const chunk = preparedChunk.chunk;
+    const embedding = await embedText(chunk);
+    const hash = hashChunk(chunk);
+    await insertChunk({
+      id: crypto.randomUUID(),
+      documentId: params.documentId,
+      content: chunk,
+      embedding,
+      page: preparedChunk.page,
+      chunkIndex,
+      hash
+    });
+    chunkIndex += 1;
+  }
+
+  logger.info(
+    { documentId: params.documentId, embeddedChunkCount: chunkIndex },
+    "Embedding completed"
+  );
+
   return { chunkCount: chunkIndex, pageCount: pages.length };
 }

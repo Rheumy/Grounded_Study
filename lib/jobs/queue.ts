@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { IngestionJob } from "@prisma/client";
+import { logger } from "@/lib/observability/logger";
 
 const LOCK_TIMEOUT_MS = 1000 * 60 * 10;
 
@@ -28,20 +29,34 @@ export async function claimNextIngestionJob(): Promise<IngestionJob | null> {
       }
     });
 
+    logger.info(
+      {
+        jobId: job.id,
+        documentId: job.documentId,
+        previousStatus: job.status,
+        attempts: job.attempts + 1
+      },
+      "Ingestion job claimed"
+    );
+
     return job;
   });
 }
 
 export async function markJobCompleted(jobId: string) {
-  return prisma.ingestionJob.update({
+  const job = await prisma.ingestionJob.update({
     where: { id: jobId },
     data: { status: "COMPLETED", lockedAt: null }
   });
+  logger.info({ jobId, documentId: job.documentId }, "Ingestion job marked complete");
+  return job;
 }
 
 export async function markJobFailed(jobId: string, error: string) {
-  return prisma.ingestionJob.update({
+  const job = await prisma.ingestionJob.update({
     where: { id: jobId },
     data: { status: "FAILED", lastError: error, lockedAt: null }
   });
+  logger.error({ jobId, documentId: job.documentId, error }, "Ingestion job marked failed");
+  return job;
 }
