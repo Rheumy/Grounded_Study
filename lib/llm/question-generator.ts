@@ -19,7 +19,7 @@ function truncate(content: string, max = 800) {
 export async function generateQuestion(params: {
   styleProfile: unknown;
   difficulty: number;
-  questionType?: "MCQ" | "SHORT_ANSWER";
+  questionType?: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   chunks: RetrievalChunk[];
 }): Promise<GeneratedQuestion> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "question-generation.md");

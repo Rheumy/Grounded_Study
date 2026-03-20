@@ -20,6 +20,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/signin");
   }
 
+  const isAdmin = (session.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;
+
   return (
     <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
       <aside className="space-y-2 rounded-xl border border-ink/10 bg-white p-4">
@@ -30,6 +32,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
               {item.label}
             </Link>
           ))}
+          {isAdmin ? (
+            <Link href="/dashboard/admin" className="text-ink/70 hover:text-ink">
+              Admin
+            </Link>
+          ) : null}
         </nav>
       </aside>
       <section className="min-w-0">{children}</section>

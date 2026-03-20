@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
-import { generateQuestions } from "@/lib/llm/generate";
+import { generateQuestions, type TypeMix } from "@/lib/llm/generate";
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
@@ -16,6 +16,27 @@ export async function POST(request: Request) {
   const styleProfileId: string | null = body.styleProfileId ?? null;
   const difficulty = Math.min(5, Math.max(1, Number(body.difficulty ?? 3)));
   const count = Math.min(20, Math.max(1, Number(body.count ?? 5)));
+
+  // Optional per-type counts override. Validated below if provided.
+  let typeMix: TypeMix | null = null;
+  if (body.typeMix && typeof body.typeMix === "object") {
+    const raw = body.typeMix as Record<string, unknown>;
+    const mcq = Number(raw.MCQ ?? 0);
+    const sa = Number(raw.SHORT_ANSWER ?? 0);
+    const tf = Number(raw.TRUE_FALSE ?? 0);
+    const total = mcq + sa + tf;
+    if (total > 0) {
+      if (total !== count) {
+        return NextResponse.json(
+          {
+            error: `typeMix total (${total}) must equal the requested question count (${count}).`
+          },
+          { status: 400 }
+        );
+      }
+      typeMix = { MCQ: mcq, SHORT_ANSWER: sa, TRUE_FALSE: tf };
+    }
+  }
 
   const documents = await prisma.document.findMany({
     where: { id: { in: documentIds }, ownerId: user.id, status: "READY" }
@@ -40,7 +61,8 @@ export async function POST(request: Request) {
         readyDocumentCount: documents.length,
         styleProfileId,
         difficulty,
-        requestedCount: count
+        requestedCount: count,
+        typeMix
       },
       "Generate questions request accepted"
     );
@@ -50,8 +72,10 @@ export async function POST(request: Request) {
       documentIds: documents.map((doc) => doc.id),
       styleProfileId,
       difficulty,
-      count
+      count,
+      typeMix
     });
+
     const passed = results.filter((result) => result.status === "PASSED").length;
     const insufficientEvidence = results.filter(
       (result) => result.status === "INSUFFICIENT_EVIDENCE"
@@ -65,7 +89,8 @@ export async function POST(request: Request) {
         difficulty,
         requestedCount: count,
         passedCount: passed,
-        insufficientEvidenceCount: insufficientEvidence
+        insufficientEvidenceCount: insufficientEvidence,
+        typeMix
       },
       "Generate questions request completed"
     );
@@ -79,6 +104,7 @@ export async function POST(request: Request) {
         styleProfileId,
         difficulty,
         requestedCount: count,
+        typeMix,
         message
       },
       "Generation failed"

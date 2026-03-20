@@ -46,6 +46,7 @@ enum JobStatus {
 enum QuestionType {
   MCQ
   SHORT_ANSWER
+  TRUE_FALSE
 }
 
 enum VerifierStatus {
@@ -188,6 +189,8 @@ model StyleProfile {
   schemaJson         Json
   examplesText       String?
   examplesImagesText String?
+  instructionsText   String?
+  sampleFilesText    String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

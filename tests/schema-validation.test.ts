@@ -3,10 +3,11 @@ import { StyleProfileSchema } from "@/lib/llm/schemas/style-profile";
 import { GeneratedQuestionSchema } from "@/lib/llm/schemas/question";
 
 const styleSample = {
-  questionTypeDistribution: { MCQ: 0.8, SHORT_ANSWER: 0.2 },
+  questionTypeDistribution: { MCQ: 0.8, SHORT_ANSWER: 0.2, TRUE_FALSE: 0.0 },
   stemLength: { minWords: 8, maxWords: 20 },
   distractorStyle: "Conceptual distractors tied to common misconceptions",
   explanationTone: "Concise and supportive",
+  answerStyle: "One complete sentence with justification",
   difficultyMap: {
     "1": "Remember",
     "2": "Understand",

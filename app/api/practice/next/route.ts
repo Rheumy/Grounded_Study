@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 type PracticeQuestionDto = {
   id: string;
   stem: string;
-  type: "MCQ" | "SHORT_ANSWER";
+  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   optionsJson: string[] | null;
   difficulty: number;
   tagsJson: unknown;
@@ -15,7 +15,7 @@ type PracticeQuestionDto = {
 function toPracticeQuestionDto(question: {
   id: string;
   stem: string;
-  type: "MCQ" | "SHORT_ANSWER";
+  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   optionsJson: unknown;
   difficulty: number;
   tagsJson: unknown;

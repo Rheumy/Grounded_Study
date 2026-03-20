@@ -9,11 +9,22 @@ export async function extractStyleProfile(params: {
   name: string;
   examplesText?: string | null;
   examplesImagesText?: string | null;
+  sampleFilesText?: string | null;
+  instructionsText?: string | null;
 }): Promise<StyleProfile> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "style-profile.md");
   const system = await fs.readFile(promptPath, "utf8");
 
-  const user = `Style profile name: ${params.name}\n\nExamples (text):\n${params.examplesText ?? "(none)"}\n\nExamples (OCR):\n${params.examplesImagesText ?? "(none)"}`;
+  const sections = [
+    `Style profile name: ${params.name}`,
+    `\nPasted sample questions / model answers / marking guides:\n${params.examplesText ?? "(none)"}`,
+    `\nExtracted text from uploaded sample files (PDF/images):\n${
+      [params.sampleFilesText, params.examplesImagesText].filter(Boolean).join("\n\n---\n\n") || "(none)"
+    }`,
+    `\nFree-text instructions from user:\n${params.instructionsText ?? "(none)"}`
+  ];
+
+  const user = sections.join("\n");
 
   return runStructured({
     model: MODEL,

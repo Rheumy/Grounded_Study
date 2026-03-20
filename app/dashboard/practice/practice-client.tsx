@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 type Question = {
   id: string;
   stem: string;
-  type: "MCQ" | "SHORT_ANSWER";
+  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   optionsJson?: string[];
 };
 
@@ -77,7 +77,7 @@ export function PracticeClient() {
           <div>
             <p className="text-lg font-medium text-ink">{question.stem}</p>
           </div>
-          {question.type === "MCQ" ? (
+          {question.type === "MCQ" || question.type === "TRUE_FALSE" ? (
             <div className="space-y-2">
               {(question.optionsJson ?? []).map((option) => (
                 <label key={option} className="flex items-center gap-2 text-sm text-ink/70">

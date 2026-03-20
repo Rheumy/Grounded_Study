@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminIngestButton } from "@/app/dashboard/admin/admin-ingest-button";
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
@@ -32,6 +33,19 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Manual ingestion</CardTitle>
+          <CardDescription>
+            Trigger a single ingestion job manually. This processes the next queued document.
+            Run once per queued document until all are ingested.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminIngestButton />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Platform overview</CardTitle>

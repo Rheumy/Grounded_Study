@@ -3,6 +3,10 @@ import { requireUser } from "@/lib/auth/require-user";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GenerateForm } from "@/app/dashboard/generate/generate-form";
 
+type ProfileSchema = {
+  questionTypeDistribution?: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number };
+};
+
 export default async function GeneratePage() {
   const user = await requireUser();
   const documents = await prisma.document.findMany({
@@ -15,7 +19,14 @@ export default async function GeneratePage() {
   });
 
   const safeDocs = documents.map((doc) => ({ id: doc.id, title: doc.title }));
-  const safeProfiles = profiles.map((profile) => ({ id: profile.id, name: profile.name }));
+  const safeProfiles = profiles.map((profile) => {
+    const schema = profile.schemaJson as ProfileSchema;
+    return {
+      id: profile.id,
+      name: profile.name,
+      distribution: schema.questionTypeDistribution ?? null
+    };
+  });
 
   return (
     <Card>
