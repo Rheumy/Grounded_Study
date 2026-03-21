@@ -149,12 +149,28 @@ export async function generateQuestions(params: {
         continue;
       }
 
-      const generated = await generateQuestion({
-        styleProfile: styleProfile?.schemaJson ?? {},
-        difficulty: params.difficulty,
-        questionType,
-        chunks
-      });
+      let generated;
+      try {
+        generated = await generateQuestion({
+          styleProfile: styleProfile?.schemaJson ?? {},
+          difficulty: params.difficulty,
+          questionType,
+          chunks
+        });
+      } catch (genError) {
+        // Log the raw error (e.g. Zod validation failure on LLM output) and retry
+        logger.warn(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt,
+            error: genError instanceof Error ? genError.message : String(genError)
+          },
+          "generateQuestion threw — likely malformed LLM output, retrying"
+        );
+        reason = "Question generation produced an invalid response";
+        continue;
+      }
 
       if (generated.verifierStatus === "INSUFFICIENT_EVIDENCE") {
         reason = "Insufficient evidence";

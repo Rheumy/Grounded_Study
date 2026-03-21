@@ -12,7 +12,7 @@ export const StyleProfileSchema = z.object({
   }),
   distractorStyle: z.string().min(3),
   explanationTone: z.string().min(3),
-  answerStyle: z.string().min(3),
+  answerStyle: z.string().min(3).optional(),
   difficultyMap: z.object({
     "1": z.string(),
     "2": z.string(),

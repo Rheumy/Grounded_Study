@@ -75,6 +75,17 @@ export async function POST(request: Request) {
 
   const sampleFilesText = extractedTexts.length > 0 ? extractedTexts.join("\n\n---\n\n") : null;
 
+  // Require at least one content input so the LLM has something to work with.
+  if (!examplesText && !instructionsText && !sampleFilesText) {
+    return NextResponse.json(
+      {
+        error:
+          "Please provide at least one input: paste sample questions, upload a sample file, or add free-text instructions."
+      },
+      { status: 400 }
+    );
+  }
+
   let schemaJson;
   try {
     const profile = await extractStyleProfile({
