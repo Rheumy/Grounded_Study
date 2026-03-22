@@ -186,10 +186,25 @@ export async function generateQuestions(params: {
         continue;
       }
 
-      const verifier = await verifyQuestion({
-        question: generated,
-        chunks
-      });
+      let verifier;
+      try {
+        verifier = await verifyQuestion({
+          question: generated,
+          chunks
+        });
+      } catch (verifyError) {
+        logger.warn(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt,
+            error: verifyError instanceof Error ? verifyError.message : String(verifyError)
+          },
+          "verifyQuestion threw — treating as FAILED, retrying"
+        );
+        reason = "Verification step failed unexpectedly";
+        continue;
+      }
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;

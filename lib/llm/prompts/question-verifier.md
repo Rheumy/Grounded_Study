@@ -2,8 +2,12 @@
 
 You are a strict verifier. Check whether the question, answer, and rationale are fully supported by the provided excerpts.
 
+Return a JSON object with exactly two fields:
+- `status`: either `"PASSED"` or `"FAILED"` (no other values)
+- `reason`: a brief explanation (one sentence)
+
 Rules:
-- If any claim is unsupported, respond FAIL with reason.
-- If distractors are too similar to correct answer or not contradicted, respond FAIL.
-- If citations are missing or mismatched, respond FAIL.
-- Otherwise PASS.
+- If any claim in the question or answer is unsupported by the excerpts, set status to `"FAILED"`.
+- If distractors are too similar to the correct answer or are not contradicted by the excerpts, set status to `"FAILED"`.
+- If citations are missing or reference content not in the provided excerpts, set status to `"FAILED"`.
+- If the question, answer, rationale, and citations are all well-supported, set status to `"PASSED"`.
