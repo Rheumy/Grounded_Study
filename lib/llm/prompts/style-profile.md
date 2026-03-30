@@ -39,6 +39,7 @@ Topic or subject tags inferred from the samples. Omit if not clear.
 
 ### notes (optional)
 Any important stylistic observations not captured by the above fields. Use "inferred" when a value had no direct evidence.
+Do NOT store MCQ option count in notes — the system always generates exactly 4 options regardless of what the samples show.
 
 ## Rules
 - Only use the provided inputs. Do not invent facts.

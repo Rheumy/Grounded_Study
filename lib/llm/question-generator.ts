@@ -66,6 +66,11 @@ function normalizeRawQuestion(
 
   let obj = raw as Record<string, unknown>;
 
+  // Preserve outer-level citations before potentially unwrapping a nested
+  // "question" object — the model sometimes puts citations at the outer level.
+  const outerCitations =
+    obj.citations ?? obj.references ?? obj.sources ?? obj.evidence;
+
   // Unwrap common single-key nesting patterns, e.g. { "question": {...} }
   // Only unwrap if the top level doesn't already look like a question itself.
   if (!obj.type && !obj.stem && !obj.question_text) {
@@ -145,13 +150,31 @@ function normalizeRawQuestion(
   // --- answer ---
   const answer = String(obj.answer ?? obj.correct_answer ?? obj.correctAnswer ?? "").trim();
 
+  // MCQ: enforce exactly 4 options.
+  // If the model returns more than 4, keep the correct answer option plus the
+  // first 3 of the remaining options. This handles the common 5-option mistake.
+  if (type === "MCQ" && options && options.length > 4) {
+    const answerIdx = options.indexOf(answer);
+    if (answerIdx !== -1) {
+      const others = options.filter((_, i) => i !== answerIdx);
+      options = [answer, ...others.slice(0, 3)];
+    } else {
+      options = options.slice(0, 4);
+    }
+  }
+
   // --- rationale ---
   const rationale = String(
     obj.rationale ?? obj.explanation ?? obj.reasoning ?? obj.justification ?? ""
   ).trim();
 
   // --- citations ---
-  const rawCitations = obj.citations ?? obj.references ?? obj.sources ?? obj.evidence;
+  // Fall back to outer-level citations when the model wraps the question in a
+  // nested object — citations are sometimes placed outside the inner wrapper.
+  const innerCitations = obj.citations ?? obj.references ?? obj.sources ?? obj.evidence;
+  const rawCitations = Array.isArray(innerCitations) && innerCitations.length > 0
+    ? innerCitations
+    : outerCitations;
   const citations: unknown[] = Array.isArray(rawCitations)
     ? rawCitations.map(normalizeCitation)
     : [];
