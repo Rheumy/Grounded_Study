@@ -16,7 +16,7 @@ export const GeneratedQuestionSchema = z
     citations: z.array(CitationSchema).min(1),
     difficulty: z.number().int().min(1).max(5),
     tags: z.array(z.string()).optional(),
-    verifierStatus: z.enum(["PENDING", "INSUFFICIENT_EVIDENCE"])
+    verifierStatus: z.enum(["PENDING", "INSUFFICIENT_EVIDENCE"]).catch("PENDING")
   })
   .superRefine((data, ctx) => {
     if (data.type === "MCQ") {

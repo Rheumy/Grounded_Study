@@ -5,6 +5,7 @@ import { extractStyleProfile } from "@/lib/llm/style-profile";
 import { validateUpload } from "@/lib/security/file-validation";
 import { ocrImage } from "@/lib/ingestion/ocr";
 import { extractPdfText } from "@/lib/ingestion/pdf";
+import { extractDocxText } from "@/lib/ingestion/docx";
 
 // Maximum pages to extract per sample file uploaded to a style profile.
 // Keep low — these are example files, not full study materials.
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
         if (text) extractedTexts.push(text);
       } else if (kind === "image") {
         const text = await ocrImage(buffer, mime);
+        if (text) extractedTexts.push(text);
+      } else if (kind === "docx") {
+        const text = await extractDocxText(buffer);
         if (text) extractedTexts.push(text);
       }
       // text files: not expected for style profile samples but validateUpload allows them

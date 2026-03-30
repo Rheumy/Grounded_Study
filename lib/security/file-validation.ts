@@ -6,7 +6,7 @@ const DEFAULT_MAX_PDF_PAGES = 400;
 const DEFAULT_MAX_IMAGE_PIXELS = 25_000_000;
 
 export type AllowedUpload = {
-  kind: "pdf" | "image" | "text";
+  kind: "pdf" | "image" | "text" | "docx";
   mime: string;
   extension: string;
 };
@@ -22,7 +22,22 @@ export type UploadValidationResult = {
   image?: { width: number; height: number };
 };
 
-export async function validateUpload(buffer: Buffer, _filename: string, size: number): Promise<UploadValidationResult> {
+const ALLOWED_IMAGE_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/gif",
+  "image/webp",
+  "image/tiff"
+]);
+
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+export async function validateUpload(
+  buffer: Buffer,
+  _filename: string,
+  size: number
+): Promise<UploadValidationResult> {
   const maxMb = Number(process.env.MAX_UPLOAD_MB ?? DEFAULT_MAX_MB);
   const maxBytes = maxMb * 1024 * 1024;
   if (size > maxBytes) {
@@ -31,7 +46,11 @@ export async function validateUpload(buffer: Buffer, _filename: string, size: nu
 
   const type = await fileTypeFromBuffer(buffer);
   if (!type) {
-    const isText = buffer.slice(0, 2000).every((byte) => byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126));
+    const isText = buffer
+      .slice(0, 2000)
+      .every(
+        (byte) => byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126)
+      );
     if (isText) {
       return {
         allowed: true,
@@ -56,7 +75,14 @@ export async function validateUpload(buffer: Buffer, _filename: string, size: nu
     };
   }
 
-  if (["image/png", "image/jpeg", "image/jpg"].includes(type.mime)) {
+  if (type.mime === DOCX_MIME) {
+    return {
+      allowed: true,
+      fileInfo: { kind: "docx", mime: type.mime, extension: type.ext }
+    };
+  }
+
+  if (ALLOWED_IMAGE_MIMES.has(type.mime)) {
     const { width, height } = imageSize(buffer);
     if (!width || !height) {
       return { allowed: false, error: "Invalid image dimensions." };

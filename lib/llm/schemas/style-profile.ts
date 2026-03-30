@@ -6,10 +6,13 @@ export const StyleProfileSchema = z.object({
     SHORT_ANSWER: z.number().min(0).max(1),
     TRUE_FALSE: z.number().min(0).max(1)
   }),
-  stemLength: z.object({
-    minWords: z.number().int().min(3),
-    maxWords: z.number().int().min(5)
-  }),
+  stemLength: z
+    .object({
+      minWords: z.number().int().min(3).catch(8),
+      maxWords: z.number().int().min(5).catch(30)
+    })
+    .default({ minWords: 8, maxWords: 30 })
+    .catch({ minWords: 8, maxWords: 30 }),
   distractorStyle: z.string().min(3),
   explanationTone: z.string().min(3),
   answerStyle: z.string().min(3).optional(),

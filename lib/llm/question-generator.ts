@@ -69,7 +69,24 @@ function normalizeRawQuestion(
   // Unwrap common single-key nesting patterns, e.g. { "question": {...} }
   // Only unwrap if the top level doesn't already look like a question itself.
   if (!obj.type && !obj.stem && !obj.question_text) {
-    for (const wrapKey of ["question", "generated_question", "result", "output", "data"]) {
+    // Also handle array wrapping: { "questions": [{...}] } → take first element
+    for (const arrKey of ["questions", "items", "results"]) {
+      const arr = obj[arrKey];
+      if (Array.isArray(arr) && arr.length > 0 && typeof arr[0] === "object" && arr[0] !== null) {
+        obj = arr[0] as Record<string, unknown>;
+        break;
+      }
+    }
+    for (const wrapKey of [
+      "question",
+      "generated_question",
+      "question_data",
+      "questionData",
+      "result",
+      "output",
+      "data",
+      "generated"
+    ]) {
       const candidate = obj[wrapKey];
       if (
         candidate !== null &&
@@ -154,13 +171,26 @@ function normalizeRawQuestion(
   }
 
   // --- verifierStatus (app code, not model) ---
-  // Honour INSUFFICIENT_EVIDENCE if the model explicitly signals it.
-  // Default everything else to PENDING.
-  const rawStatus = String(obj.verifierStatus ?? obj.status ?? "");
-  const verifierStatus =
-    rawStatus.toUpperCase() === "INSUFFICIENT_EVIDENCE"
-      ? "INSUFFICIENT_EVIDENCE"
-      : "PENDING";
+  // verifierStatus is always set by app code. We honour INSUFFICIENT_EVIDENCE
+  // if the model explicitly signals it; all other values → PENDING.
+  // Known model aliases for "not enough evidence":
+  //   INSUFFICIENT_EVIDENCE, NO_EVIDENCE, UNSUPPORTED, INSUFFICIENT
+  // Known model aliases for "evidence present" (map to PENDING, not a failure):
+  //   EVIDENCE_PRESENT, SUFFICIENT_EVIDENCE, SUPPORTED, GROUNDED
+  const rawStatus = String(obj.verifierStatus ?? obj.status ?? "")
+    .trim()
+    .toUpperCase();
+  const INSUFFICIENT_ALIASES = new Set([
+    "INSUFFICIENT_EVIDENCE",
+    "NO_EVIDENCE",
+    "UNSUPPORTED",
+    "INSUFFICIENT",
+    "NOT_SUPPORTED",
+    "NO_SUPPORT"
+  ]);
+  const verifierStatus = INSUFFICIENT_ALIASES.has(rawStatus)
+    ? "INSUFFICIENT_EVIDENCE"
+    : "PENDING";
 
   return { type, stem, options, answer, rationale, citations, difficulty, tags, verifierStatus };
 }

@@ -93,8 +93,26 @@ function normalizeStemLength(raw: unknown): { minWords: number; maxWords: number
 
   const obj = raw as Record<string, unknown>;
 
-  const minRaw = obj.minWords ?? obj.min_words ?? obj.min ?? obj.minimum ?? obj.minWord;
-  const maxRaw = obj.maxWords ?? obj.max_words ?? obj.max ?? obj.maximum ?? obj.maxWord;
+  const minRaw =
+    obj.minWords ??
+    obj.min_words ??
+    obj.minimum_words ??
+    obj.minLength ??
+    obj.min_length ??
+    obj.min ??
+    obj.minimum ??
+    obj.minWord ??
+    obj.from;
+  const maxRaw =
+    obj.maxWords ??
+    obj.max_words ??
+    obj.maximum_words ??
+    obj.maxLength ??
+    obj.max_length ??
+    obj.max ??
+    obj.maximum ??
+    obj.maxWord ??
+    obj.to;
 
   const minWords = Math.max(3, Math.round(toNum(minRaw, defaults.minWords)));
   const maxWords = Math.max(5, Math.round(toNum(maxRaw, defaults.maxWords)));
@@ -150,7 +168,18 @@ function normalizeTags(raw: unknown): string[] | undefined {
 // ---------------------------------------------------------------------------
 // Full raw → canonical normalisation for StyleProfile
 // ---------------------------------------------------------------------------
-function normalizeRawStyleProfile(raw: unknown): Record<string, unknown> {
+function normalizeRawStyleProfile(raw: unknown, rawText: string): Record<string, unknown> {
+  logger.info(
+    {
+      topLevelKeys:
+        raw !== null && typeof raw === "object" && !Array.isArray(raw)
+          ? Object.keys(raw as object)
+          : null,
+      rawPreview: rawText.slice(0, 400)
+    },
+    "Style profile raw model output"
+  );
+
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`Unexpected style profile shape from model: ${typeof raw}`);
   }
@@ -256,7 +285,7 @@ export async function extractStyleProfile(params: {
 
   let normalized: Record<string, unknown>;
   try {
-    normalized = normalizeRawStyleProfile(rawJson);
+    normalized = normalizeRawStyleProfile(rawJson, rawText);
   } catch (normError) {
     logger.warn(
       {

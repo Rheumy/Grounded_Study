@@ -93,13 +93,18 @@ export function StyleProfileForm() {
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-ink">
-          Upload sample files (PDF or images, optional)
+          Upload sample files (PDF, Word, or images, optional)
         </label>
         <p className="text-xs text-ink/50">
-          Upload past exam papers, question sheets, or marking guides as PDF or image files. You
-          can select multiple files. Up to 10 pages per file are extracted.
+          Upload past exam papers, question sheets, or marking guides as PDF, Word (.docx), or
+          image files. You can select multiple files. Up to 10 pages per file are extracted.
         </p>
-        <Input name="sampleFile" type="file" accept="application/pdf,image/*" multiple />
+        <Input
+          name="sampleFile"
+          type="file"
+          accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,image/*"
+          multiple
+        />
       </div>
 
       <div className="space-y-2">

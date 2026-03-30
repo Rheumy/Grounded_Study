@@ -55,9 +55,11 @@ describe("style profile normalization edge cases", () => {
     expect(() => StyleProfileSchema.parse(bad)).toThrow();
   });
 
-  it("rejects missing stemLength.minWords — schema requires it", () => {
-    const bad = { ...styleSample, stemLength: { maxWords: 30 } };
-    expect(() => StyleProfileSchema.parse(bad)).toThrow();
+  it("accepts stemLength with only maxWords — minWords falls back to default 8", () => {
+    // .catch(8) on minWords means missing/invalid minWords is tolerated
+    const result = StyleProfileSchema.parse({ ...styleSample, stemLength: { maxWords: 30 } });
+    expect(result.stemLength.minWords).toBe(8);
+    expect(result.stemLength.maxWords).toBe(30);
   });
 
   it("rejects notes as object — schema requires string", () => {

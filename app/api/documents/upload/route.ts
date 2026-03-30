@@ -14,7 +14,7 @@ async function createDocumentFromValidatedUpload(params: {
   fileName: string;
   storageKey: string;
   sizeBytes: number;
-  fileInfo: { kind: "pdf" | "image" | "text"; mime: string };
+  fileInfo: { kind: "pdf" | "image" | "text" | "docx"; mime: string };
 }) {
   const existing = await prisma.document.findFirst({
     where: { ownerId: params.ownerId, storageKey: params.storageKey }
