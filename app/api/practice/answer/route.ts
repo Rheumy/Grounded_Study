@@ -3,6 +3,11 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 import { updateSchedule } from "@/lib/practice/spaced-repetition";
 import { gradeShortAnswer } from "@/lib/llm/grading";
+import {
+  buildUserFacingRationale,
+  formatFeedbackCitations,
+  normalizeCitationRecords
+} from "@/lib/feedback/user-facing";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -26,6 +31,8 @@ export async function POST(request: Request) {
 
   let correct = false;
   let needsReview = false;
+  let graderReason: string | null = null;
+  const citations = normalizeCitationRecords(question.citationsJson);
 
   if (question.type === "MCQ" || question.type === "TRUE_FALSE") {
     correct = selectedAnswer === question.answer;
@@ -35,8 +42,9 @@ export async function POST(request: Request) {
         question: question.stem,
         expectedAnswer: question.answer,
         studentAnswer: selectedAnswer,
-        citations: (question.citationsJson as any[]) ?? []
+        citations
       });
+      graderReason = grade.reason;
       if (grade.verdict === "NEEDS_REVIEW") {
         needsReview = true;
         correct = false;
@@ -46,6 +54,7 @@ export async function POST(request: Request) {
     } catch (_error) {
       needsReview = true;
       correct = false;
+      graderReason = "The answer could not be graded confidently from the available evidence.";
     }
   }
 
@@ -65,7 +74,13 @@ export async function POST(request: Request) {
     correct,
     needsReview,
     correctAnswer: question.answer,
-    rationale: question.rationale,
-    citations: question.citationsJson
+    rationale: buildUserFacingRationale({
+      questionType: question.type,
+      storedRationale: question.rationale,
+      graderReason,
+      correct,
+      needsReview
+    }),
+    citations: formatFeedbackCitations(question.citationsJson)
   });
 }

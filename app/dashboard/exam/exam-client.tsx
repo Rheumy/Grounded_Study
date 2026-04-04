@@ -11,6 +11,31 @@ type Question = {
   options: string[];
 };
 
+type ReviewCitation = {
+  label: string;
+  excerpt: string;
+};
+
+type ExamReviewItem = {
+  order: number;
+  questionId: string;
+  stem: string;
+  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+  userAnswer: string | null;
+  correct: boolean;
+  needsReview: boolean;
+  correctAnswer: string;
+  rationale: string;
+  citations: ReviewCitation[];
+};
+
+type ExamReview = {
+  correct: number;
+  total: number;
+  needsReview: number;
+  review: ExamReviewItem[];
+};
+
 export function ExamClient() {
   const [count, setCount] = useState(10);
   const [timeLimitMin, setTimeLimitMin] = useState(30);
@@ -20,6 +45,7 @@ export function ExamClient() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [timer, setTimer] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [review, setReview] = useState<ExamReview | null>(null);
 
   useEffect(() => {
     if (!timer) return;
@@ -29,39 +55,41 @@ export function ExamClient() {
     return () => clearInterval(interval);
   }, [timer]);
 
-  useEffect(() => {
-    if (timer !== 0 || !sessionId) return;
+  async function submitExam(activeSessionId: string, answerMap: Record<string, string>) {
+    setStatus("Submitting exam...");
+    const answerList = Object.entries(answerMap).map(([questionId, selectedAnswer]) => ({
+      questionId,
+      selectedAnswer
+    }));
 
-    async function submitExpiredExam() {
-      setStatus("Submitting exam...");
-      const answerList = Object.entries(answers).map(([questionId, selectedAnswer]) => ({
-        questionId,
-        selectedAnswer
-      }));
+    const response = await fetch("/api/exam/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: activeSessionId, answers: answerList })
+    });
 
-      const response = await fetch("/api/exam/finish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, answers: answerList })
-      });
-
-      const body = await response.json();
-      if (!response.ok) {
-        setStatus(body.error ?? "Failed to submit exam");
-        return;
-      }
-
-      setStatus(`Score: ${body.correct}/${body.total}`);
-      setSessionId(null);
-      setQuestions([]);
-      setTimer(null);
+    const body = await response.json();
+    if (!response.ok) {
+      setStatus(body.error ?? "Failed to submit exam");
+      return;
     }
 
-    void submitExpiredExam();
+    setReview(body);
+    setStatus(null);
+    setSessionId(null);
+    setQuestions([]);
+    setTimer(null);
+  }
+
+  useEffect(() => {
+    if (timer !== 0 || !sessionId) return;
+    void submitExam(sessionId, answers);
   }, [answers, sessionId, timer]);
 
   const startExam = async () => {
     setStatus("Starting exam...");
+    setReview(null);
+
     const response = await fetch("/api/exam/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -91,28 +119,12 @@ export function ExamClient() {
 
   const finishExam = async () => {
     if (!sessionId) return;
-    setStatus("Submitting exam...");
-    const answerList = Object.entries(answers).map(([questionId, selectedAnswer]) => ({
-      questionId,
-      selectedAnswer
-    }));
+    await submitExam(sessionId, answers);
+  };
 
-    const response = await fetch("/api/exam/finish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, answers: answerList })
-    });
-
-    const body = await response.json();
-    if (!response.ok) {
-      setStatus(body.error ?? "Failed to submit exam");
-      return;
-    }
-
-    setStatus(`Score: ${body.correct}/${body.total}`);
-    setSessionId(null);
-    setQuestions([]);
-    setTimer(null);
+  const resetReview = () => {
+    setReview(null);
+    setStatus(null);
   };
 
   const formatTimer = () => {
@@ -124,7 +136,58 @@ export function ExamClient() {
 
   return (
     <div className="space-y-4">
-      {!sessionId ? (
+      {review ? (
+        <div className="space-y-4">
+          <div className="rounded-md border border-ink/10 bg-white p-4">
+            <p className="text-lg font-medium text-ink">Exam review</p>
+            <p className="mt-2 text-sm text-ink/70">
+              Score: {review.correct}/{review.total}
+            </p>
+            <p className="text-sm text-ink/60">Needs review: {review.needsReview}</p>
+            <Button className="mt-4" onClick={resetReview}>
+              Start another mock exam
+            </Button>
+          </div>
+
+          {review.review.map((item) => {
+            const statusLabel = item.needsReview ? "Needs review" : item.correct ? "Correct" : "Incorrect";
+            const statusClass = item.needsReview ? "text-ink" : item.correct ? "text-accent" : "text-danger";
+
+            return (
+              <div key={item.questionId} className="space-y-3 rounded-md border border-ink/10 bg-white p-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-ink/50">Question {item.order}</p>
+                  <p className="font-medium text-ink">{item.stem}</p>
+                </div>
+
+                <p className={`text-sm font-medium ${statusClass}`}>{statusLabel}</p>
+                <p className="text-sm text-ink/70">
+                  <span className="font-medium text-ink">Your answer:</span>{" "}
+                  {item.userAnswer?.trim() ? item.userAnswer : "No answer submitted"}
+                </p>
+                <p className="text-sm text-ink/70">
+                  <span className="font-medium text-ink">Correct answer:</span> {item.correctAnswer}
+                </p>
+                <p className="text-sm text-ink/70">{item.rationale}</p>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>
+                  {item.citations.length > 0 ? (
+                    item.citations.map((citation, index) => (
+                      <div key={`${item.questionId}-${citation.label}-${index}`} className="space-y-1">
+                        <p className="text-xs font-medium text-ink/50">{citation.label}</p>
+                        <p className="text-xs text-ink/60">{citation.excerpt}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-ink/50">No source excerpt available.</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : !sessionId ? (
         <div className="space-y-3">
           <div className="grid gap-2 text-sm">
             <label className="flex items-center justify-between">

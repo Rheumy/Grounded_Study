@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 import { gradeShortAnswer } from "@/lib/llm/grading";
+import {
+  buildUserFacingRationale,
+  formatFeedbackCitations,
+  normalizeCitationRecords
+} from "@/lib/feedback/user-facing";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -41,13 +46,19 @@ export async function POST(request: Request) {
   );
 
   let correctCount = 0;
+  let needsReviewCount = 0;
+  const review = [];
 
   for (const sessionQuestion of session.examSessionQuestions) {
     const question = sessionQuestion.question;
     const selectedAnswer = answersByQuestionId.get(question.id) ?? null;
+    const citations = normalizeCitationRecords(question.citationsJson);
 
     let correct = false;
-    if (selectedAnswer && question.type === "MCQ") {
+    let needsReview = false;
+    let graderReason: string | null = null;
+
+    if (selectedAnswer && (question.type === "MCQ" || question.type === "TRUE_FALSE")) {
       correct = selectedAnswer === question.answer;
     } else if (selectedAnswer) {
       try {
@@ -55,19 +66,47 @@ export async function POST(request: Request) {
           question: question.stem,
           expectedAnswer: question.answer,
           studentAnswer: selectedAnswer,
-          citations: (question.citationsJson as any[]) ?? []
+          citations
         });
-        correct = grade.verdict === "CORRECT";
+        graderReason = grade.reason;
+        if (grade.verdict === "NEEDS_REVIEW") {
+          needsReview = true;
+          correct = false;
+        } else {
+          correct = grade.verdict === "CORRECT";
+        }
       } catch (_error) {
         correct = false;
+        needsReview = question.type === "SHORT_ANSWER";
+        graderReason = "The answer could not be graded confidently from the available evidence.";
       }
     }
 
     if (correct) correctCount += 1;
+    if (needsReview) needsReviewCount += 1;
 
     await prisma.examSessionQuestion.updateMany({
       where: { sessionId: session.id, questionId: question.id },
       data: { selectedAnswer, correct }
+    });
+
+    review.push({
+      order: sessionQuestion.order,
+      questionId: question.id,
+      stem: question.stem,
+      type: question.type,
+      userAnswer: selectedAnswer,
+      correct,
+      needsReview,
+      correctAnswer: question.answer,
+      rationale: buildUserFacingRationale({
+        questionType: question.type,
+        storedRationale: question.rationale,
+        graderReason,
+        correct,
+        needsReview
+      }),
+      citations: formatFeedbackCitations(question.citationsJson)
     });
   }
 
@@ -78,6 +117,8 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     correct: correctCount,
-    total: session.examSessionQuestions.length
+    total: session.examSessionQuestions.length,
+    needsReview: needsReviewCount,
+    review
   });
 }
