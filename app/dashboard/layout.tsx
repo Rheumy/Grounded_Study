@@ -24,16 +24,26 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
-      <aside className="space-y-2 rounded-xl border border-ink/10 bg-white p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink/50">Dashboard</p>
+      <aside className="space-y-4 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Dashboard</p>
+          <p className="text-sm text-ink/60">Move between study setup, practice, and review.</p>
+        </div>
         <nav className="flex flex-col gap-2 text-sm">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="text-ink/70 hover:text-ink">
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-xl px-3 py-2 text-ink/70 transition hover:bg-ink/[0.04] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            >
               {item.label}
             </Link>
           ))}
           {isAdmin ? (
-            <Link href="/dashboard/admin" className="text-ink/70 hover:text-ink">
+            <Link
+              href="/dashboard/admin"
+              className="rounded-xl px-3 py-2 text-ink/70 transition hover:bg-ink/[0.04] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+            >
               Admin
             </Link>
           ) : null}

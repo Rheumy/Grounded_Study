@@ -60,6 +60,7 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
 
   const typeMixTotal = mcqCount + shortAnswerCount + trueFalseCount;
   const typeMixMismatch = typeMixTotal > 0 && typeMixTotal !== count;
+  const shortAnswerGuidanceVisible = shortAnswerCount > 0;
 
   const submit = async () => {
     setLoading(true);
@@ -162,6 +163,10 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
             </option>
           ))}
         </select>
+        <p className="text-xs text-ink/55">
+          For short-answer or other subjective formats, marking guides, model answers, and rubrics
+          make grading and feedback more reliable.
+        </p>
       </div>
 
       {/* Difficulty */}
@@ -246,6 +251,12 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
           Total: {typeMixTotal} / {count}
           {typeMixMismatch ? " — total must match the number of questions" : ""}
         </p>
+        {shortAnswerGuidanceVisible ? (
+          <p className="text-xs text-ink/55">
+            Short-answer feedback is strongest when your question format includes model answers,
+            marking guides, or rubrics. Without them, grading is still best-effort.
+          </p>
+        ) : null}
       </div>
 
       <Button

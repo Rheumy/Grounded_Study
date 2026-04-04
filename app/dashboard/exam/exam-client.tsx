@@ -36,10 +36,28 @@ type ExamReview = {
   review: ExamReviewItem[];
 };
 
+const difficultyOptions = [
+  {
+    label: "Easy",
+    value: 2,
+    description: "Straightforward recall and more obvious questions."
+  },
+  {
+    label: "Moderate",
+    value: 3,
+    description: "Standard competency level."
+  },
+  {
+    label: "Hard",
+    value: 4,
+    description: "Deeper mastery and more difficult distinctions."
+  }
+] as const;
+
 export function ExamClient() {
   const [count, setCount] = useState(10);
   const [timeLimitMin, setTimeLimitMin] = useState(30);
-  const [difficulty, setDifficulty] = useState<number | "">("");
+  const [difficulty, setDifficulty] = useState<number>(3);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -96,7 +114,7 @@ export function ExamClient() {
       body: JSON.stringify({
         count,
         timeLimitMin,
-        difficulty: difficulty === "" ? null : Number(difficulty)
+        difficulty
       })
     });
 
@@ -138,7 +156,7 @@ export function ExamClient() {
     <div className="space-y-4">
       {review ? (
         <div className="space-y-4">
-          <div className="rounded-md border border-ink/10 bg-white p-4">
+          <div className="rounded-2xl border border-ink/10 bg-white p-5 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
             <p className="text-lg font-medium text-ink">Exam review</p>
             <p className="mt-2 text-sm text-ink/70">
               Score: {review.correct}/{review.total}
@@ -154,13 +172,15 @@ export function ExamClient() {
             const statusClass = item.needsReview ? "text-ink" : item.correct ? "text-accent" : "text-danger";
 
             return (
-              <div key={item.questionId} className="space-y-3 rounded-md border border-ink/10 bg-white p-4">
+              <div key={item.questionId} className="space-y-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
                 <div className="space-y-1">
                   <p className="text-sm text-ink/50">Question {item.order}</p>
                   <p className="font-medium text-ink">{item.stem}</p>
                 </div>
 
-                <p className={`text-sm font-medium ${statusClass}`}>{statusLabel}</p>
+                <p className={`inline-flex rounded-full bg-ink/[0.03] px-3 py-1 text-sm font-medium ${statusClass}`}>
+                  {statusLabel}
+                </p>
                 <p className="text-sm text-ink/70">
                   <span className="font-medium text-ink">Your answer:</span>{" "}
                   {item.userAnswer?.trim() ? item.userAnswer : "No answer submitted"}
@@ -174,7 +194,10 @@ export function ExamClient() {
                   <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>
                   {item.citations.length > 0 ? (
                     item.citations.map((citation, index) => (
-                      <div key={`${item.questionId}-${citation.label}-${index}`} className="space-y-1">
+                      <div
+                        key={`${item.questionId}-${citation.label}-${index}`}
+                        className="space-y-1 rounded-xl border border-ink/10 bg-ink/[0.02] p-3"
+                      >
                         <p className="text-xs font-medium text-ink/50">{citation.label}</p>
                         <p className="text-xs text-ink/60">{citation.excerpt}</p>
                       </div>
@@ -188,10 +211,10 @@ export function ExamClient() {
           })}
         </div>
       ) : !sessionId ? (
-        <div className="space-y-3">
-          <div className="grid gap-2 text-sm">
-            <label className="flex items-center justify-between">
-              Question count
+        <div className="space-y-4">
+          <div className="grid gap-4 text-sm md:grid-cols-2">
+            <label className="flex items-center justify-between rounded-2xl border border-ink/10 bg-ink/[0.02] px-4 py-3">
+              <span className="font-medium text-ink">Number of questions</span>
               <input
                 type="number"
                 min={1}
@@ -201,8 +224,8 @@ export function ExamClient() {
                 className="h-9 w-24 rounded-md border border-ink/15 px-2"
               />
             </label>
-            <label className="flex items-center justify-between">
-              Time limit (min)
+            <label className="flex items-center justify-between rounded-2xl border border-ink/10 bg-ink/[0.02] px-4 py-3">
+              <span className="font-medium text-ink">Time limit (min)</span>
               <input
                 type="number"
                 min={5}
@@ -212,25 +235,49 @@ export function ExamClient() {
                 className="h-9 w-24 rounded-md border border-ink/15 px-2"
               />
             </label>
-            <label className="flex items-center justify-between">
-              Difficulty (optional)
-              <input
-                type="number"
-                min={1}
-                max={5}
-                value={difficulty}
-                onChange={(event) => setDifficulty(event.target.value === "" ? "" : Number(event.target.value))}
-                className="h-9 w-24 rounded-md border border-ink/15 px-2"
-              />
-            </label>
+            <div className="space-y-3 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4 md:col-span-2">
+              <div className="space-y-1">
+                <p className="font-medium text-ink">Difficulty</p>
+                <p className="text-xs text-ink/55">Choose the overall challenge level for this exam.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {difficultyOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant={difficulty === option.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setDifficulty(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="space-y-1 text-xs text-ink/60">
+                {difficultyOptions.map((option) => (
+                  <p key={option.value}>
+                    <span className="font-medium text-ink">{option.label}</span> = {option.description}
+                  </p>
+                ))}
+              </div>
+            </div>
           </div>
-          <Button onClick={startExam}>Start mock exam</Button>
+          <div className="rounded-2xl border border-accent/20 bg-accentSoft/40 p-4">
+            <p className="text-sm font-medium text-ink">Short-answer grading note</p>
+            <p className="mt-1 text-sm text-ink/65">
+              If your exam includes short-answer questions, feedback is strongest when the underlying
+              question format included marking guides, model answers, or rubrics.
+            </p>
+          </div>
+          <Button onClick={startExam} className="shadow-sm">Start mock exam</Button>
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-ink/60">Time remaining: {formatTimer()}</p>
+          <div className="rounded-2xl border border-ink/10 bg-ink/[0.02] px-4 py-3">
+            <p className="text-sm text-ink/60">Time remaining: {formatTimer()}</p>
+          </div>
           {questions.map((question, index) => (
-            <div key={question.id} className="space-y-2 rounded-md border border-ink/10 p-3">
+            <div key={question.id} className="space-y-2 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
               <p className="text-sm font-medium text-ink">
                 {index + 1}. {question.stem}
               </p>
@@ -258,7 +305,7 @@ export function ExamClient() {
               )}
             </div>
           ))}
-          <Button onClick={finishExam}>Submit mock exam</Button>
+          <Button onClick={finishExam} className="shadow-sm">Submit mock exam</Button>
         </div>
       )}
 

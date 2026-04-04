@@ -4,6 +4,7 @@ type CitationRecord = {
   chunkId: string;
   excerpt: string;
   page: number | null;
+  section: string | null;
 };
 
 export type FeedbackCitation = {
@@ -41,7 +42,15 @@ export function normalizeCitationRecords(input: unknown): CitationRecord[] {
       {
         chunkId: typeof citation.chunkId === "string" ? citation.chunkId : "",
         excerpt,
-        page: typeof citation.page === "number" ? citation.page : null
+        page: typeof citation.page === "number" ? citation.page : null,
+        section:
+          typeof citation.section === "string"
+            ? sanitizeFeedbackText(citation.section)
+            : typeof citation.heading === "string"
+              ? sanitizeFeedbackText(citation.heading)
+              : typeof citation.title === "string"
+                ? sanitizeFeedbackText(citation.title)
+                : null
       }
     ];
   });
@@ -49,7 +58,14 @@ export function normalizeCitationRecords(input: unknown): CitationRecord[] {
 
 export function formatFeedbackCitations(input: unknown): FeedbackCitation[] {
   return normalizeCitationRecords(input).map((citation, index) => ({
-    label: citation.page ? `Page ${citation.page}` : `Source ${index + 1}`,
+    label:
+      citation.section && citation.page !== null
+        ? `${citation.section} · Page ${citation.page}`
+        : citation.section
+          ? citation.section
+          : citation.page !== null
+            ? `Page ${citation.page}`
+            : `Source ${index + 1}`,
     excerpt: citation.excerpt
   }));
 }

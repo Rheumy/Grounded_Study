@@ -55,6 +55,12 @@ function parseTags(value: unknown): string[] {
     .filter(Boolean);
 }
 
+const recycleModeDescriptions: Record<RecycleMode, string> = {
+  NONE: "Focus on questions you have not already completed successfully in practice.",
+  DUE: "Mix in questions that are scheduled to come back for revision.",
+  INCORRECT: "Bring back questions you previously got wrong in practice."
+};
+
 export function PracticeClient() {
   const [view, setView] = useState<"setup" | "active" | "summary">("setup");
   const [sessionConfig, setSessionConfig] = useState<PracticeSessionConfig>({
@@ -198,9 +204,10 @@ export function PracticeClient() {
     <div className="space-y-4">
       {view === "setup" ? (
         <div className="space-y-4">
-          <div className="grid gap-3 text-sm">
-            <label className="grid gap-2">
+          <div className="grid gap-4 text-sm md:grid-cols-2">
+            <label className="grid gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4">
               <span className="font-medium text-ink">Question type</span>
+              <span className="text-xs text-ink/55">Choose one question type or practise a mixed set.</span>
               <select
                 value={sessionConfig.questionType}
                 onChange={(event) =>
@@ -218,8 +225,9 @@ export function PracticeClient() {
               </select>
             </label>
 
-            <div className="grid gap-2">
-              <span className="font-medium text-ink">Session length</span>
+            <div className="grid gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4">
+              <span className="font-medium text-ink">Questions this session</span>
+              <span className="text-xs text-ink/55">Set how many questions you want to work through.</span>
               <div className="flex flex-wrap gap-2">
                 {[5, 10, 20].map((length) => (
                   <Button
@@ -253,8 +261,9 @@ export function PracticeClient() {
               />
             </div>
 
-            <label className="grid gap-2">
-              <span className="font-medium text-ink">Recycle mode</span>
+            <label className="grid gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4 md:col-span-2">
+              <span className="font-medium text-ink">Question source</span>
+              <span className="text-xs text-ink/55">Choose whether this session should stay fresh or revisit earlier work.</span>
               <select
                 value={sessionConfig.recycleMode}
                 onChange={(event) =>
@@ -265,21 +274,24 @@ export function PracticeClient() {
                 }
                 className="h-10 rounded-md border border-ink/15 bg-white px-3 text-ink"
               >
-                <option value="NONE">No recycle</option>
-                <option value="DUE">Recycle due questions</option>
-                <option value="INCORRECT">Recycle previously incorrect questions</option>
+                <option value="NONE">New questions only</option>
+                <option value="DUE">Include scheduled review questions</option>
+                <option value="INCORRECT">Include previously incorrect questions</option>
               </select>
+              <p className="text-xs text-ink/55">{recycleModeDescriptions[sessionConfig.recycleMode]}</p>
             </label>
           </div>
 
-          <Button onClick={startSession}>Start practice session</Button>
+          <Button onClick={startSession} className="shadow-sm">
+            Start practice session
+          </Button>
           {status ? <p className="text-sm text-ink/60">{status}</p> : null}
         </div>
       ) : null}
 
       {view === "active" ? (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] px-4 py-3">
             <p className="text-sm text-ink/60">
               Question {currentQuestionNumber} of {sessionConfig.sessionLength}
             </p>
@@ -322,8 +334,10 @@ export function PracticeClient() {
                   Submit answer
                 </Button>
               ) : (
-                <div className="rounded-md border border-ink/10 bg-white p-4 text-sm">
-                  <p className={`font-medium ${feedbackStatusClass}`}>{feedbackStatus}</p>
+                <div className="rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
+                  <p className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${feedbackStatusClass} bg-ink/[0.03]`}>
+                    {feedbackStatus}
+                  </p>
                   <p className="mt-2 text-ink/80">
                     <span className="font-medium text-ink">Correct answer:</span> {feedback.correctAnswer}
                   </p>
@@ -337,7 +351,7 @@ export function PracticeClient() {
                     <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>
                     {feedback.citations.length > 0 ? (
                       feedback.citations.map((citation, index) => (
-                        <div key={`${citation.label}-${index}`} className="space-y-1">
+                        <div key={`${citation.label}-${index}`} className="space-y-1 rounded-xl border border-ink/10 bg-ink/[0.02] p-3">
                           <p className="text-xs font-medium text-ink/50">{citation.label}</p>
                           <p className="text-xs text-ink/60">{citation.excerpt}</p>
                         </div>
@@ -364,7 +378,7 @@ export function PracticeClient() {
       ) : null}
 
       {view === "summary" ? (
-        <div className="space-y-4 rounded-md border border-ink/10 bg-white p-4">
+        <div className="space-y-4 rounded-2xl border border-ink/10 bg-white p-5 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
           <div>
             <p className="text-lg font-medium text-ink">Practice session summary</p>
             <p className="text-sm text-ink/60">A quick view of how this session went.</p>

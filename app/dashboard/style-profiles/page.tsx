@@ -28,12 +28,22 @@ export default async function StyleProfilesPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <div className="rounded-2xl border border-ink/10 bg-ink/[0.02] p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Question format</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Capture the exam style you are studying for</h1>
+        <p className="mt-2 max-w-3xl text-sm text-ink/65">
+          Clearer context leads to more useful questions and more grounded feedback. If you want
+          subjective or short-answer formats, include model answers, rubrics, or marking guides
+          whenever you can.
+        </p>
+      </div>
+
+      <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <CardHeader>
           <CardTitle>Create a question format</CardTitle>
           <CardDescription>
-            Shape how your questions should look by uploading sample questions, past exam items,
-            marking guides, or by describing the format in your own words.
+            Shape how your questions should look by adding examples, optional study context, sample
+            files, or plain-English instructions.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -41,7 +51,7 @@ export default async function StyleProfilesPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <CardHeader>
           <CardTitle>Saved question formats</CardTitle>
           <CardDescription>Choose one of these when generating new questions.</CardDescription>
@@ -57,7 +67,7 @@ export default async function StyleProfilesPage() {
               {profiles.map((profile) => {
                 const schema = profile.schemaJson as ProfileSchema;
                 return (
-                  <li key={profile.id} className="rounded-md border border-ink/10 p-3 space-y-1">
+                  <li key={profile.id} className="space-y-1 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4">
                     <p className="font-medium text-ink">{profile.name}</p>
                     <p className="text-xs text-ink/50">
                       Question types: {typeLabel(schema.questionTypeDistribution)}

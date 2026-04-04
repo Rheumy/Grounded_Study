@@ -11,6 +11,24 @@ import { extractDocxText } from "@/lib/ingestion/docx";
 // Keep low — these are example files, not full study materials.
 const SAMPLE_FILE_MAX_PAGES = 10;
 
+function buildStudyContextText(formData: FormData): string | null {
+  const courseName = String(formData.get("courseName") ?? "").trim();
+  const institution = String(formData.get("institution") ?? "").trim();
+  const countryRegion = String(formData.get("countryRegion") ?? "").trim();
+  const candidateLevel = String(formData.get("candidateLevel") ?? "").trim();
+
+  const lines = [
+    courseName ? `Exam or course: ${courseName}` : null,
+    institution ? `Institution or board: ${institution}` : null,
+    countryRegion ? `Country or region: ${countryRegion}` : null,
+    candidateLevel ? `Candidate level or training stage: ${candidateLevel}` : null
+  ].filter(Boolean);
+
+  if (lines.length === 0) return null;
+
+  return `Study context:\n${lines.join("\n")}`;
+}
+
 export async function GET() {
   const user = await requireUserApi();
   if (!user) {
@@ -35,6 +53,8 @@ export async function POST(request: Request) {
   const name = String(formData.get("name") ?? "Untitled format");
   const examplesText = formData.get("examplesText")?.toString() || null;
   const instructionsText = formData.get("instructionsText")?.toString() || null;
+  const studyContextText = buildStudyContextText(formData);
+  const combinedInstructionsText = [instructionsText, studyContextText].filter(Boolean).join("\n\n") || null;
 
   // Collect all uploaded sample files (PDF or image, possibly multiple)
   const sampleFileEntries = formData.getAll("sampleFile");
@@ -97,7 +117,7 @@ export async function POST(request: Request) {
       examplesText,
       examplesImagesText: null, // legacy field; new uploads go through sampleFilesText
       sampleFilesText,
-      instructionsText
+      instructionsText: combinedInstructionsText
     });
     schemaJson = profile;
   } catch (error) {
@@ -113,7 +133,7 @@ export async function POST(request: Request) {
       examplesText,
       examplesImagesText: null,
       sampleFilesText,
-      instructionsText
+      instructionsText: combinedInstructionsText
     }
   });
 
