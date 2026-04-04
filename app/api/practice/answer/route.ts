@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   let correct = false;
   let needsReview = false;
 
-  if (question.type === "MCQ") {
+  if (question.type === "MCQ" || question.type === "TRUE_FALSE") {
     correct = selectedAnswer === question.answer;
   } else {
     try {
@@ -64,6 +64,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     correct,
     needsReview,
+    correctAnswer: question.answer,
     rationale: question.rationale,
     citations: question.citationsJson
   });

@@ -14,6 +14,7 @@ type Question = {
 type Feedback = {
   correct: boolean;
   needsReview: boolean;
+  correctAnswer: string;
   rationale: string;
   citations: { chunkId: string; excerpt: string; page?: number | null }[];
 };
@@ -25,6 +26,10 @@ export function PracticeClient() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [startTime, setStartTime] = useState<number>(Date.now());
+  const showNeedsReview = question?.type === "SHORT_ANSWER" && feedback?.needsReview === true;
+  const isCorrect = feedback?.correct === true;
+  const feedbackStatus = showNeedsReview ? "Needs review" : isCorrect ? "Correct" : "Incorrect";
+  const feedbackStatusClass = showNeedsReview ? "text-ink" : isCorrect ? "text-accent" : "text-danger";
 
   const loadQuestion = async () => {
     setStatus("Loading question...");
@@ -109,10 +114,16 @@ export function PracticeClient() {
 
       {feedback ? (
         <div className="rounded-md border border-ink/10 bg-white p-4 text-sm">
-          <p className={`font-medium ${feedback.correct ? "text-accent" : "text-danger"}`}>
-            {feedback.needsReview ? "Needs review" : feedback.correct ? "Correct" : "Incorrect"}
+          <p className={`font-medium ${feedbackStatusClass}`}>{feedbackStatus}</p>
+          <p className="mt-2 text-ink/80">
+            <span className="font-medium text-ink">Correct answer:</span> {feedback.correctAnswer}
           </p>
           <p className="mt-2 text-ink/70">{feedback.rationale}</p>
+          {showNeedsReview ? (
+            <p className="mt-2 text-ink/60">
+              Your response could not be graded confidently, so please compare it against the expected answer.
+            </p>
+          ) : null}
           <div className="mt-3 space-y-2">
             <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>
             {feedback.citations?.map((citation) => (
