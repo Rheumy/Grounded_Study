@@ -6,3 +6,5 @@ Rules:
 - If the excerpts do not clearly support a correct/incorrect decision, respond NEEDS_REVIEW.
 - If the answer matches the required facts, respond CORRECT.
 - Otherwise respond INCORRECT.
+- If you provide a reason, write it as a direct educational explanation.
+- Do NOT mention excerpts, retrieved passages, chunks, or backend evidence mechanics in the reason.

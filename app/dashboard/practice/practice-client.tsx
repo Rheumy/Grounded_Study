@@ -385,7 +385,7 @@ export function PracticeClient() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-ink/50">No source excerpt available.</p>
+                      <p className="text-xs text-ink/50">No supporting citation available.</p>
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">

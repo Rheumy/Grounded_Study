@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 type Doc = { id: string; title: string };
@@ -13,46 +13,18 @@ type Profile = {
 };
 type GenerationResult = { questionId?: string; status: string; reason?: string };
 
-function inferTypeCounts(
-  count: number,
-  distribution: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } | null
-): { MCQ: number; SHORT_ANSWER: number; TRUE_FALSE: number } {
-  if (!distribution) return { MCQ: count, SHORT_ANSWER: 0, TRUE_FALSE: 0 };
-
-  const mcqW = distribution.MCQ ?? 0;
-  const saW = distribution.SHORT_ANSWER ?? 0;
-  const tfW = distribution.TRUE_FALSE ?? 0;
-  const totalWeight = mcqW + saW + tfW;
-
-  if (totalWeight === 0) return { MCQ: count, SHORT_ANSWER: 0, TRUE_FALSE: 0 };
-
-  const mcq = Math.round(count * (mcqW / totalWeight));
-  const sa = Math.round(count * (saW / totalWeight));
-  const tf = Math.max(0, count - mcq - sa);
-  return { MCQ: mcq, SHORT_ANSWER: sa, TRUE_FALSE: tf };
-}
-
-function getDominantType(
-  distribution: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } | null
-): QuestionType {
-  if (!distribution) return "MCQ";
-
-  const entries: Array<[QuestionType, number]> = [
-    ["MCQ", distribution.MCQ ?? 0],
-    ["SHORT_ANSWER", distribution.SHORT_ANSWER ?? 0],
-    ["TRUE_FALSE", distribution.TRUE_FALSE ?? 0]
-  ];
-
-  return entries.sort((a, b) => b[1] - a[1])[0]?.[0] ?? "MCQ";
-}
-
-export function GenerateForm({ documents, profiles }: { documents: Doc[]; profiles: Profile[] }) {
+export function GenerateForm({
+  documents,
+  profiles: _profiles
+}: {
+  documents: Doc[];
+  profiles: Profile[];
+}) {
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
   const [count, setCount] = useState(5);
-  const [profileId, setProfileId] = useState<string | null>(profiles[0]?.id ?? null);
   const [questionTypeMode, setQuestionTypeMode] = useState<QuestionTypeMode>("SINGLE");
   const [singleType, setSingleType] = useState<QuestionType>("MCQ");
   const [mcqCount, setMcqCount] = useState(5);
@@ -64,20 +36,6 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
       prev.includes(id) ? prev.filter((doc) => doc !== id) : [...prev, id]
     );
   };
-
-  useEffect(() => {
-    const profile = profiles.find((p) => p.id === profileId) ?? null;
-    const inferred = inferTypeCounts(count, profile?.distribution ?? null);
-
-    if (questionTypeMode === "MIXED") {
-      setMcqCount(inferred.MCQ);
-      setShortAnswerCount(inferred.SHORT_ANSWER);
-      setTrueFalseCount(inferred.TRUE_FALSE);
-      return;
-    }
-
-    setSingleType(getDominantType(profile?.distribution ?? null));
-  }, [count, profileId, profiles, questionTypeMode]);
 
   const typeMixTotal = mcqCount + shortAnswerCount + trueFalseCount;
   const typeMixMismatch = questionTypeMode === "MIXED" && typeMixTotal !== count;
@@ -104,7 +62,7 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentIds: selectedDocs,
-          styleProfileId: profileId,
+          styleProfileId: null,
           difficulty,
           count,
           typeMix
@@ -171,30 +129,6 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
         )}
       </div>
 
-      <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
-        <label className="text-sm font-medium text-ink">Question format</label>
-        <p className="text-sm text-ink/60">
-          Question Format shapes wording, answer expectations, and exam flavour. The question type
-          controls below decide what gets generated in this run.
-        </p>
-        <select
-          className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
-          value={profileId ?? ""}
-          onChange={(event) => setProfileId(event.target.value || null)}
-        >
-          <option value="">Default style</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.name}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-ink/55">
-          Current MCQ generation uses exactly 4 options, even if a saved format suggests a different
-          option count.
-        </p>
-      </div>
-
       <div className="space-y-2">
         <label className="text-sm font-medium text-ink">Question difficulty</label>
         <p className="text-sm text-ink/60">Choose how challenging you want the questions to be.</p>
@@ -222,7 +156,14 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
           min={1}
           max={20}
           value={count}
-          onChange={(event) => setCount(Number(event.target.value))}
+          onChange={(event) => {
+            const nextCount = Number(event.target.value);
+            setCount(nextCount);
+
+            if (questionTypeMode === "MIXED" && shortAnswerCount === 0 && trueFalseCount === 0) {
+              setMcqCount(nextCount);
+            }
+          }}
           className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
         />
       </div>
@@ -248,7 +189,12 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
             type="button"
             variant={questionTypeMode === "MIXED" ? "default" : "outline"}
             size="sm"
-            onClick={() => setQuestionTypeMode("MIXED")}
+            onClick={() => {
+              setQuestionTypeMode("MIXED");
+              setMcqCount(count);
+              setShortAnswerCount(0);
+              setTrueFalseCount(0);
+            }}
           >
             Mixed types
           </Button>
@@ -272,7 +218,7 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-ink/60">
-              Choose the mix for this run. {profileId ? "The counts below are a starting suggestion from your selected Question Format." : "By default this starts as all MCQ."}
+              Choose the mix for this run. By default this starts as all MCQ.
             </p>
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="space-y-1 text-xs text-ink/70">
@@ -317,12 +263,13 @@ export function GenerateForm({ documents, profiles }: { documents: Doc[]; profil
         )}
 
         <p className="text-xs text-ink/55">
-          Question Format influences style. Question type mode controls the types generated in this run.
+          Question type mode controls the types generated in this run. Current MCQ generation uses
+          exactly 4 options.
         </p>
         {shortAnswerGuidanceVisible ? (
           <p className="text-xs text-ink/55">
-            Short-answer feedback is strongest when your question format includes model answers,
-            marking guides, or rubrics. Without them, grading is still best-effort.
+            Short-answer feedback is strongest when your materials or saved format include model
+            answers, marking guides, or rubrics. Without them, grading is still best-effort.
           </p>
         ) : null}
       </div>

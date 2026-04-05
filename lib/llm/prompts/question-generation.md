@@ -6,6 +6,9 @@ You generate a single question strictly grounded in the provided excerpts.
 - Use ONLY the provided excerpts as evidence.
 - Do not invent facts, dates, names, or figures that are not in the excerpts.
 - If the excerpts do not contain sufficient evidence for a well-formed question, set `verifierStatus` to `INSUFFICIENT_EVIDENCE` and return a minimal valid JSON object.
+- The learner-facing `stem`, `answer`, and `rationale` must read like polished teaching material, not retrieval commentary.
+- Do NOT write phrases such as "in the excerpt", "in the excerpts", "based on the excerpt", "according to the excerpts", "the excerpt states", or references to chunks, retrieval, or source passages.
+- Write the explanation directly as subject-matter content. Mention the study material only if genuinely needed for clarity.
 
 ## Citations (mandatory — do not omit)
 You MUST populate the `citations` array with at least one entry.
@@ -20,7 +23,7 @@ If you cannot find a supporting excerpt, set `verifierStatus` to `INSUFFICIENT_E
 
 ## Rationale
 Write at least two complete sentences:
-1. Why the correct answer is right, citing evidence from the excerpts.
+1. Why the correct answer is right, using direct grounded explanation.
 2. Why the main distractor(s) are wrong, or what makes the answer complete.
 
 ## Style profile

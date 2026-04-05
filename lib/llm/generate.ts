@@ -4,6 +4,7 @@ import { generateQuestion, type RetrievalChunk } from "@/lib/llm/question-genera
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
 import { retrieveChunks } from "@/lib/retrieval/retrieve";
 import { logger } from "@/lib/observability/logger";
+import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 const MAX_RETRIES = 3;
 
@@ -217,10 +218,10 @@ export async function generateQuestions(params: {
           styleProfileId: params.styleProfileId,
           difficulty: generated.difficulty,
           type: generated.type,
-          stem: generated.stem,
+          stem: sanitizeFeedbackText(generated.stem),
           optionsJson: generated.options ?? undefined,
-          answer: generated.answer,
-          rationale: generated.rationale,
+          answer: sanitizeFeedbackText(generated.answer),
+          rationale: sanitizeFeedbackText(generated.rationale),
           citationsJson: generated.citations,
           verifierStatus: "PASSED",
           tagsJson: generated.tags ?? undefined

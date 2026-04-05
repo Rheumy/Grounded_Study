@@ -21,6 +21,13 @@ function collapseWhitespace(value: string): string {
 export function sanitizeFeedbackText(value: string | null | undefined): string {
   return collapseWhitespace(
     String(value ?? "")
+      .replace(/\baccording to the excerpts?,?\s*/gi, "")
+      .replace(/\bbased on the excerpts?,?\s*/gi, "")
+      .replace(/\bin the excerpts?,?\s*/gi, "")
+      .replace(/\bthe excerpts? (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?) that\s*/gi, "")
+      .replace(/\bthe excerpts? (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?)\s*/gi, "")
+      .replace(/\bthe source material (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?) that\s*/gi, "")
+      .replace(/\bthe source material (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?)\s*/gi, "")
       .replace(/\bChunk\s+[A-Za-z0-9_-]+(?:\s*\(page\s*[^)]*\))?:?\s*/gi, "")
       .replace(/\bchunkId\s*[:=]\s*[A-Za-z0-9_-]+\b/gi, "")
       .replace(/\bExcerpts?:\s*/gi, "")
@@ -127,8 +134,8 @@ export function buildUserFacingRationale(params: {
     return (
       baseRationale ||
       (params.correct
-        ? "This answer is supported by the source material."
-        : "The correct answer is the one best supported by the source material.")
+        ? "This answer is correct."
+        : "The model answer is the best match here.")
     );
   }
 
@@ -142,7 +149,7 @@ export function buildUserFacingRationale(params: {
     graderReason ||
     baseRationale ||
     (params.needsReview
-      ? "This answer needs review against the source material."
+      ? "This answer needs review."
       : params.correct
         ? "This answer matches the expected response."
         : "This answer does not match the expected response.")
