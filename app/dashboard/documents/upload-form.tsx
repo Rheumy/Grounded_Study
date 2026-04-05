@@ -13,6 +13,15 @@ type BlobInitResponse = {
   clientToken: string;
 };
 
+type UploadFinalizeResponse = {
+  documentId: string;
+  status: string;
+};
+
+type IngestResponse =
+  | { ok: true; status: string }
+  | { ok: false; status: string; error: string };
+
 async function parseErrorResponse(response: Response, fallback: string) {
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
@@ -33,6 +42,7 @@ export function UploadForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const router = useRouter();
 
   async function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
@@ -53,6 +63,7 @@ export function UploadForm({
     event.preventDefault();
     setError(null);
     setLoading(true);
+    setUploadStatus("Uploading");
 
     // Capture the form element immediately (before any await)
     const formEl = event.currentTarget;
@@ -177,12 +188,39 @@ export function UploadForm({
       }
 
       console.info("Upload finalize completed");
+      const uploadBody = (await response.json().catch(() => null)) as UploadFinalizeResponse | null;
+      const documentId = uploadBody?.documentId;
+      if (!documentId) {
+        setError("Upload completed but the document could not be tracked.");
+        return;
+      }
+
+      setUploadStatus("Queued");
+      router.refresh();
+      setUploadStatus("Processing");
+
+      const ingestResponse = await fetch("/api/documents/ingest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ documentId })
+      });
+      const ingestBody = (await ingestResponse.json().catch(() => null)) as IngestResponse | null;
+
+      if (!ingestResponse.ok || !ingestBody?.ok) {
+        setUploadStatus("Failed");
+        setError(ingestBody && "error" in ingestBody ? ingestBody.error : "Document processing failed.");
+        router.refresh();
+        return;
+      }
+
+      setUploadStatus(ingestBody.status === "READY" ? "Ready" : ingestBody.status === "PROCESSING" ? "Processing" : "Queued");
       // Reset using the captured form element (avoids currentTarget being null)
       formEl.reset();
       router.refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload failed";
       console.error("Upload failed", e);
+      setUploadStatus("Failed");
       setError(msg);
     } finally {
       setLoading(false);
@@ -205,6 +243,7 @@ export function UploadForm({
       <Button type="submit" disabled={loading} data-testid="document-upload-submit">
         {loading ? "Uploading..." : "Upload material"}
       </Button>
+      {uploadStatus ? <p className="text-xs text-ink/60">Status: {uploadStatus}</p> : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
     </form>
   );

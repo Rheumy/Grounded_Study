@@ -10,8 +10,21 @@ export async function GET() {
 
   const documents = await prisma.document.findMany({
     where: { ownerId: user.id },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    include: {
+      ingestionJobs: {
+        orderBy: { updatedAt: "desc" },
+        take: 1
+      }
+    }
   });
 
-  return NextResponse.json({ documents });
+  return NextResponse.json({
+    documents: documents.map((document) => ({
+      id: document.id,
+      title: document.title,
+      status: document.status,
+      latestError: document.ingestionJobs[0]?.lastError ?? null
+    }))
+  });
 }

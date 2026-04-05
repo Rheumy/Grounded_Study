@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
 
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
@@ -24,6 +25,7 @@ type FeedbackCitation = {
 type Feedback = {
   correct: boolean;
   needsReview: boolean;
+  reviewStatus: ShortAnswerReviewStatus | null;
   correctAnswer: string;
   rationale: string;
   citations: FeedbackCitation[];
@@ -76,10 +78,23 @@ export function PracticeClient() {
   const [startTime, setStartTime] = useState<number>(Date.now());
 
   const currentQuestionNumber = results.length + (question ? 1 : 0);
-  const showNeedsReview = question?.type === "SHORT_ANSWER" && feedback?.needsReview === true;
+  const isShortAnswer = question?.type === "SHORT_ANSWER";
+  const shortAnswerReviewLabel = getShortAnswerReviewLabel(feedback?.reviewStatus ?? null);
   const isCorrect = feedback?.correct === true;
-  const feedbackStatus = showNeedsReview ? "Needs review" : isCorrect ? "Correct" : "Incorrect";
-  const feedbackStatusClass = showNeedsReview ? "text-ink" : isCorrect ? "text-accent" : "text-danger";
+  const feedbackStatus = isShortAnswer
+    ? shortAnswerReviewLabel ?? "Short-answer review"
+    : isCorrect
+      ? "Correct"
+      : "Incorrect";
+  const feedbackStatusClass = isShortAnswer
+    ? feedback?.reviewStatus === "STRONG_MATCH"
+      ? "text-accent"
+      : feedback?.reviewStatus === "PARTIAL_MATCH"
+        ? "text-danger"
+        : "text-ink"
+    : isCorrect
+      ? "text-accent"
+      : "text-danger";
 
   const loadQuestion = async (excludeQuestionIds: string[], nextViewIfEmpty: "setup" | "summary") => {
     setStatus("Loading question...");
@@ -182,10 +197,20 @@ export function PracticeClient() {
   };
 
   const totalAnswered = results.length;
-  const needsReviewCount = results.filter((item) => item.feedback.needsReview).length;
-  const correctCount = results.filter((item) => item.feedback.correct).length;
-  const incorrectCount = results.filter(
-    (item) => !item.feedback.correct && !item.feedback.needsReview
+  const objectiveResults = results.filter((item) => item.question.type !== "SHORT_ANSWER");
+  const shortAnswerResults = results.filter((item) => item.question.type === "SHORT_ANSWER");
+  const objectiveTotal = objectiveResults.length;
+  const objectiveCorrect = objectiveResults.filter((item) => item.feedback.correct).length;
+  const objectiveIncorrect = objectiveTotal - objectiveCorrect;
+  const shortAnswerReviewed = shortAnswerResults.filter((item) => item.feedback.reviewStatus !== null).length;
+  const shortAnswerStrongMatch = shortAnswerResults.filter(
+    (item) => item.feedback.reviewStatus === "STRONG_MATCH"
+  ).length;
+  const shortAnswerPartialMatch = shortAnswerResults.filter(
+    (item) => item.feedback.reviewStatus === "PARTIAL_MATCH"
+  ).length;
+  const shortAnswerNeedsReview = shortAnswerResults.filter(
+    (item) => item.feedback.reviewStatus === "NEEDS_REVIEW"
   ).length;
 
   const incorrectTopicCounts = results.reduce<Record<string, number>>((acc, item) => {
@@ -335,16 +360,19 @@ export function PracticeClient() {
                 </Button>
               ) : (
                 <div className="rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
-                  <p className={`inline-flex rounded-full px-3 py-1 text-sm font-medium ${feedbackStatusClass} bg-ink/[0.03]`}>
+                  <p className={`inline-flex rounded-full bg-ink/[0.03] px-3 py-1 text-sm font-medium ${feedbackStatusClass}`}>
                     {feedbackStatus}
                   </p>
                   <p className="mt-2 text-ink/80">
-                    <span className="font-medium text-ink">Correct answer:</span> {feedback.correctAnswer}
+                    <span className="font-medium text-ink">
+                      {isShortAnswer ? "Model answer:" : "Correct answer:"}
+                    </span>{" "}
+                    {feedback.correctAnswer}
                   </p>
                   <p className="mt-2 text-ink/70">{feedback.rationale}</p>
-                  {showNeedsReview ? (
+                  {isShortAnswer ? (
                     <p className="mt-2 text-ink/60">
-                      Your response could not be graded confidently, so compare it against the model answer.
+                      This is a model-answer review rather than an objective score.
                     </p>
                   ) : null}
                   <div className="mt-3 space-y-2">
@@ -386,9 +414,12 @@ export function PracticeClient() {
 
           <div className="grid gap-2 text-sm text-ink/80">
             <p>Total answered: {totalAnswered}</p>
-            <p>Correct: {correctCount}</p>
-            <p>Incorrect: {incorrectCount}</p>
-            <p>Needs review: {needsReviewCount}</p>
+            <p>Objective questions: {objectiveCorrect}/{objectiveTotal} correct</p>
+            <p>Objective incorrect: {objectiveIncorrect}</p>
+            <p>Short-answer reviewed: {shortAnswerReviewed}</p>
+            <p>Strong match: {shortAnswerStrongMatch}</p>
+            <p>Partial match: {shortAnswerPartialMatch}</p>
+            <p>Needs review: {shortAnswerNeedsReview}</p>
           </div>
 
           {topIncorrectTopic && topIncorrectTopic[1] >= 2 ? (

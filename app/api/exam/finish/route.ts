@@ -5,6 +5,7 @@ import { gradeShortAnswer } from "@/lib/llm/grading";
 import {
   buildUserFacingRationale,
   formatFeedbackCitations,
+  getShortAnswerReviewStatus,
   normalizeCitationRecords
 } from "@/lib/feedback/user-facing";
 
@@ -47,11 +48,17 @@ export async function POST(request: Request) {
 
   let correctCount = 0;
   let needsReviewCount = 0;
+  let objectiveTotal = 0;
+  let objectiveCorrect = 0;
+  let shortAnswerReviewed = 0;
+  let shortAnswerStrongMatch = 0;
+  let shortAnswerPartialMatch = 0;
   const review = [];
 
   for (const sessionQuestion of session.examSessionQuestions) {
     const question = sessionQuestion.question;
     const selectedAnswer = answersByQuestionId.get(question.id) ?? null;
+    const hasAnswer = Boolean(selectedAnswer?.trim());
     const citations = normalizeCitationRecords(question.citationsJson);
 
     let correct = false;
@@ -82,6 +89,22 @@ export async function POST(request: Request) {
       }
     }
 
+    const reviewStatus = getShortAnswerReviewStatus({
+      questionType: question.type,
+      hasAnswer,
+      correct,
+      needsReview
+    });
+
+    if (question.type === "MCQ" || question.type === "TRUE_FALSE") {
+      objectiveTotal += 1;
+      if (correct) objectiveCorrect += 1;
+    } else if (reviewStatus) {
+      shortAnswerReviewed += 1;
+      if (reviewStatus === "STRONG_MATCH") shortAnswerStrongMatch += 1;
+      if (reviewStatus === "PARTIAL_MATCH") shortAnswerPartialMatch += 1;
+    }
+
     if (correct) correctCount += 1;
     if (needsReview) needsReviewCount += 1;
 
@@ -98,6 +121,7 @@ export async function POST(request: Request) {
       userAnswer: selectedAnswer,
       correct,
       needsReview,
+      reviewStatus,
       correctAnswer: question.answer,
       rationale: buildUserFacingRationale({
         questionType: question.type,
@@ -119,6 +143,12 @@ export async function POST(request: Request) {
     correct: correctCount,
     total: session.examSessionQuestions.length,
     needsReview: needsReviewCount,
+    objectiveCorrect,
+    objectiveTotal,
+    shortAnswerReviewed,
+    shortAnswerStrongMatch,
+    shortAnswerPartialMatch,
+    shortAnswerNeedsReview: needsReviewCount,
     review
   });
 }

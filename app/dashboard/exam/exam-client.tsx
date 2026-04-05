@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
 
 type Question = {
   id: string;
@@ -24,6 +25,7 @@ type ExamReviewItem = {
   userAnswer: string | null;
   correct: boolean;
   needsReview: boolean;
+  reviewStatus: ShortAnswerReviewStatus | null;
   correctAnswer: string;
   rationale: string;
   citations: ReviewCitation[];
@@ -33,6 +35,12 @@ type ExamReview = {
   correct: number;
   total: number;
   needsReview: number;
+  objectiveCorrect: number;
+  objectiveTotal: number;
+  shortAnswerReviewed: number;
+  shortAnswerStrongMatch: number;
+  shortAnswerPartialMatch: number;
+  shortAnswerNeedsReview: number;
   review: ExamReviewItem[];
 };
 
@@ -159,17 +167,35 @@ export function ExamClient() {
           <div className="rounded-2xl border border-ink/10 bg-white p-5 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
             <p className="text-lg font-medium text-ink">Exam review</p>
             <p className="mt-2 text-sm text-ink/70">
-              Score: {review.correct}/{review.total}
+              Objective score: {review.objectiveCorrect}/{review.objectiveTotal}
             </p>
-            <p className="text-sm text-ink/60">Needs review: {review.needsReview}</p>
+            <div className="mt-2 space-y-1 text-sm text-ink/60">
+              <p>Short-answer reviewed: {review.shortAnswerReviewed}</p>
+              <p>Strong match: {review.shortAnswerStrongMatch}</p>
+              <p>Partial match: {review.shortAnswerPartialMatch}</p>
+              <p>Needs review: {review.shortAnswerNeedsReview}</p>
+            </div>
             <Button className="mt-4" onClick={resetReview}>
               Start another mock exam
             </Button>
           </div>
 
           {review.review.map((item) => {
-            const statusLabel = item.needsReview ? "Needs review" : item.correct ? "Correct" : "Incorrect";
-            const statusClass = item.needsReview ? "text-ink" : item.correct ? "text-accent" : "text-danger";
+            const isShortAnswer = item.type === "SHORT_ANSWER";
+            const statusLabel = isShortAnswer
+              ? getShortAnswerReviewLabel(item.reviewStatus) ?? "Short-answer review"
+              : item.correct
+                ? "Correct"
+                : "Incorrect";
+            const statusClass = isShortAnswer
+              ? item.reviewStatus === "STRONG_MATCH"
+                ? "text-accent"
+                : item.reviewStatus === "PARTIAL_MATCH"
+                  ? "text-danger"
+                  : "text-ink"
+              : item.correct
+                ? "text-accent"
+                : "text-danger";
 
             return (
               <div key={item.questionId} className="space-y-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
@@ -186,9 +212,17 @@ export function ExamClient() {
                   {item.userAnswer?.trim() ? item.userAnswer : "No answer submitted"}
                 </p>
                 <p className="text-sm text-ink/70">
-                  <span className="font-medium text-ink">Correct answer:</span> {item.correctAnswer}
+                  <span className="font-medium text-ink">
+                    {isShortAnswer ? "Model answer:" : "Correct answer:"}
+                  </span>{" "}
+                  {item.correctAnswer}
                 </p>
                 <p className="text-sm text-ink/70">{item.rationale}</p>
+                {isShortAnswer ? (
+                  <p className="text-sm text-ink/60">
+                    This is a model-answer review rather than an objective score.
+                  </p>
+                ) : null}
 
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>

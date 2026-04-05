@@ -8,13 +8,20 @@ export default async function DocumentsPage() {
   const user = await requireUser();
   const documents = await prisma.document.findMany({
     where: { ownerId: user.id },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    include: {
+      ingestionJobs: {
+        orderBy: { updatedAt: "desc" },
+        take: 1
+      }
+    }
   });
 
   const safeDocs = documents.map((doc) => ({
     id: doc.id,
     title: doc.title,
-    status: doc.status
+    status: doc.status,
+    latestError: doc.ingestionJobs[0]?.lastError ?? null
   }));
 
   return (
@@ -23,7 +30,8 @@ export default async function DocumentsPage() {
         <CardHeader>
           <CardTitle>Upload study materials</CardTitle>
           <CardDescription>
-            Upload textbooks, lecture notes, handouts, or past papers to build your question bank.
+            Upload textbooks, lecture notes, handouts, or past papers. We will queue and start
+            processing them automatically after upload.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -1,5 +1,7 @@
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 
+export type ShortAnswerReviewStatus = "STRONG_MATCH" | "PARTIAL_MATCH" | "NEEDS_REVIEW";
+
 type CitationRecord = {
   chunkId: string;
   excerpt: string;
@@ -68,6 +70,32 @@ export function formatFeedbackCitations(input: unknown): FeedbackCitation[] {
             : `Source ${index + 1}`,
     excerpt: citation.excerpt
   }));
+}
+
+export function getShortAnswerReviewStatus(params: {
+  questionType: QuestionType;
+  hasAnswer: boolean;
+  correct: boolean;
+  needsReview: boolean;
+}): ShortAnswerReviewStatus | null {
+  if (params.questionType !== "SHORT_ANSWER" || !params.hasAnswer) {
+    return null;
+  }
+
+  if (params.needsReview) {
+    return "NEEDS_REVIEW";
+  }
+
+  return params.correct ? "STRONG_MATCH" : "PARTIAL_MATCH";
+}
+
+export function getShortAnswerReviewLabel(
+  status: ShortAnswerReviewStatus | null
+): string | null {
+  if (status === "STRONG_MATCH") return "Strong match";
+  if (status === "PARTIAL_MATCH") return "Partial match";
+  if (status === "NEEDS_REVIEW") return "Could not be confidently graded";
+  return null;
 }
 
 function toUserFacingGraderReason(value: string | null | undefined): string {

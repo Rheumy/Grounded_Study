@@ -6,6 +6,7 @@ import { gradeShortAnswer } from "@/lib/llm/grading";
 import {
   buildUserFacingRationale,
   formatFeedbackCitations,
+  getShortAnswerReviewStatus,
   normalizeCitationRecords
 } from "@/lib/feedback/user-facing";
 
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   let correct = false;
   let needsReview = false;
   let graderReason: string | null = null;
+  const hasAnswer = selectedAnswer.trim().length > 0;
   const citations = normalizeCitationRecords(question.citationsJson);
 
   if (question.type === "MCQ" || question.type === "TRUE_FALSE") {
@@ -70,9 +72,17 @@ export async function POST(request: Request) {
 
   await updateSchedule({ userId: user.id, questionId: question.id, correct });
 
+  const reviewStatus = getShortAnswerReviewStatus({
+    questionType: question.type,
+    hasAnswer,
+    correct,
+    needsReview
+  });
+
   return NextResponse.json({
     correct,
     needsReview,
+    reviewStatus,
     correctAnswer: question.answer,
     rationale: buildUserFacingRationale({
       questionType: question.type,
