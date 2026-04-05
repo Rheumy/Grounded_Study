@@ -53,29 +53,30 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-ink/10 bg-ink/[0.02] p-6">
+      <div className="rounded-2xl border border-ink/10 bg-white p-7 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Overview</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Grounded Study workspace</h1>
-        <p className="mt-2 max-w-3xl text-sm text-ink/65">
-          Move from source material to generation, practice, and review without losing the grounded
-          evidence behind each question.
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          Grounded Study workspace
+        </h1>
+        <p className="mt-3 max-w-3xl text-base leading-7 text-ink/65">
+          Move from study material to question generation, practice, and review in one clear flow.
         </p>
-        <p className="mt-4 text-sm text-ink/50">Signed in as {session?.user?.email}</p>
+        <p className="mt-5 text-sm text-ink/50">Signed in as {session?.user?.email}</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {dashboardCards.map((card) => (
           <Link key={card.href} href={card.href} className="group">
-            <Card className="h-full border-ink/12 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-[0_22px_45px_-34px_rgba(15,23,42,0.45)]">
-              <CardContent className="flex h-full flex-col justify-between space-y-6 p-0">
-                <div className="space-y-3">
+            <Card className="h-full border-ink/12 bg-white transition duration-200 hover:-translate-y-0.5 hover:border-ink/20 hover:shadow-[0_22px_45px_-34px_rgba(15,23,42,0.45)]">
+              <CardContent className="flex h-full flex-col justify-between space-y-8 p-5">
+                <div className="space-y-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">{card.eyebrow}</p>
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-semibold tracking-tight text-ink">{card.title}</h2>
+                  <div className="space-y-2.5">
+                    <h2 className="text-[1.35rem] font-semibold tracking-tight text-ink">{card.title}</h2>
                     <p className="text-sm leading-6 text-ink/65">{card.description}</p>
                   </div>
                 </div>
-                <p className="text-sm font-medium text-accent transition group-hover:translate-x-0.5">
+                <p className="text-sm font-medium text-ink transition group-hover:translate-x-0.5">
                   {card.cta}
                 </p>
               </CardContent>

@@ -7,7 +7,7 @@ import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/f
 
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
-type RecycleMode = "NONE" | "DUE" | "INCORRECT";
+type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
 
 type Question = {
   id: string;
@@ -58,9 +58,10 @@ function parseTags(value: unknown): string[] {
 }
 
 const recycleModeDescriptions: Record<RecycleMode, string> = {
-  NONE: "Focus on questions you have not already completed successfully in practice.",
+  NONE: "Stay with fresh questions you have not already answered correctly in practice.",
   DUE: "Mix in questions that are scheduled to come back for revision.",
-  INCORRECT: "Bring back questions you previously got wrong in practice."
+  INCORRECT: "Revisit questions you previously got wrong in practice.",
+  ALL: "Use the full question pool, including fresh questions and ones you have seen before."
 };
 
 export function PracticeClient() {
@@ -288,7 +289,10 @@ export function PracticeClient() {
 
             <label className="grid gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4 md:col-span-2">
               <span className="font-medium text-ink">Question source</span>
-              <span className="text-xs text-ink/55">Choose whether this session should stay fresh or revisit earlier work.</span>
+              <span className="text-xs text-ink/55">
+                Choose whether to stay with fresh questions, revisit past mistakes, or draw from
+                everything available.
+              </span>
               <select
                 value={sessionConfig.recycleMode}
                 onChange={(event) =>
@@ -299,9 +303,9 @@ export function PracticeClient() {
                 }
                 className="h-10 rounded-md border border-ink/15 bg-white px-3 text-ink"
               >
-                <option value="NONE">New questions only</option>
-                <option value="DUE">Include scheduled review questions</option>
-                <option value="INCORRECT">Include previously incorrect questions</option>
+                <option value="NONE">New questions</option>
+                <option value="INCORRECT">Prior incorrect questions</option>
+                <option value="ALL">All questions</option>
               </select>
               <p className="text-xs text-ink/55">{recycleModeDescriptions[sessionConfig.recycleMode]}</p>
             </label>
@@ -328,7 +332,9 @@ export function PracticeClient() {
           {question ? (
             <div className="space-y-4">
               <div>
-                <p className="text-lg font-medium text-ink">{question.stem}</p>
+                <p className="text-xl font-semibold leading-8 tracking-tight text-ink">
+                  {question.stem}
+                </p>
               </div>
               {question.type === "MCQ" || question.type === "TRUE_FALSE" ? (
                 <div className="space-y-2">
@@ -359,23 +365,32 @@ export function PracticeClient() {
                   Submit answer
                 </Button>
               ) : (
-                <div className="rounded-2xl border border-ink/10 bg-white p-4 text-sm shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
-                  <p className={`inline-flex rounded-full bg-ink/[0.03] px-3 py-1 text-sm font-medium ${feedbackStatusClass}`}>
-                    {feedbackStatus}
-                  </p>
-                  <p className="mt-2 text-ink/80">
-                    <span className="font-medium text-ink">
-                      {isShortAnswer ? "Model answer:" : "Correct answer:"}
-                    </span>{" "}
-                    {feedback.correctAnswer}
-                  </p>
-                  <p className="mt-2 text-ink/70">{feedback.rationale}</p>
+                <div className="rounded-2xl border border-ink/10 bg-white p-5 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
+                  <div className="space-y-4">
+                    <p
+                      className={`inline-flex rounded-full bg-ink/[0.03] px-3 py-1 text-sm font-medium ${feedbackStatusClass}`}
+                    >
+                      {feedbackStatus}
+                    </p>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
+                        {isShortAnswer ? "Model answer" : "Correct answer"}
+                      </p>
+                      <p className="text-base leading-7 text-ink">{feedback.correctAnswer}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
+                        Explanation
+                      </p>
+                      <p className="text-base leading-7 text-ink/80">{feedback.rationale}</p>
+                    </div>
+                  </div>
                   {isShortAnswer ? (
-                    <p className="mt-2 text-ink/60">
+                    <p className="mt-4 text-sm leading-6 text-ink/60">
                       This is a model-answer review rather than an objective score.
                     </p>
                   ) : null}
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-5 space-y-2">
                     <p className="text-xs font-semibold uppercase text-ink/40">Citations</p>
                     {feedback.citations.length > 0 ? (
                       feedback.citations.map((citation, index) => (

@@ -4,7 +4,7 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 
 const QUESTION_TYPES = ["MCQ", "SHORT_ANSWER", "TRUE_FALSE"] as const;
-const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT"] as const;
+const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
 
 type QuestionTypeFilter = (typeof QUESTION_TYPES)[number] | "ALL";
 type RecycleMode = (typeof RECYCLE_MODES)[number];
@@ -84,6 +84,10 @@ function buildEmptyMessage(questionType: QuestionTypeFilter, recycleMode: Recycl
     return `No previously incorrect ${typeLabel} questions are available right now.`;
   }
 
+  if (recycleMode === "ALL") {
+    return `No ${typeLabel} questions are available right now.`;
+  }
+
   return `No ${typeLabel} practice questions are available right now.`;
 }
 
@@ -145,6 +149,14 @@ export async function GET(request: Request) {
     });
 
     question = pickRandomQuestion(candidates);
+  } else if (recycleMode === "ALL") {
+    const candidates = await prisma.question.findMany({
+      where: baseQuestionWhere,
+      select: practiceQuestionSelect,
+      take: 200
+    });
+
+    question = pickRandomQuestion(candidates);
   } else {
     const candidates = await prisma.question.findMany({
       where: {
@@ -172,6 +184,11 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     question: toPracticeQuestionDto(question),
-    mode: recycleMode === "NONE" ? "new" : recycleMode.toLowerCase()
+    mode:
+      recycleMode === "NONE"
+        ? "new"
+        : recycleMode === "ALL"
+          ? "all"
+          : recycleMode.toLowerCase()
   });
 }
