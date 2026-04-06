@@ -81,7 +81,13 @@ export async function POST(request: Request) {
         const text = pages.map((p) => p.text).join("\n\n").trim();
         if (text) extractedTexts.push(text);
       } else if (kind === "image") {
-        const text = await ocrImage(buffer, mime);
+        const text = await ocrImage(buffer, mime, {
+          userId: user.id,
+          metadata: {
+            source: "style_profile_sample",
+            fileName: entry.name
+          }
+        });
         if (text) extractedTexts.push(text);
       } else if (kind === "docx") {
         const text = await extractDocxText(buffer);
@@ -117,7 +123,8 @@ export async function POST(request: Request) {
       examplesText,
       examplesImagesText: null, // legacy field; new uploads go through sampleFilesText
       sampleFilesText,
-      instructionsText: combinedInstructionsText
+      instructionsText: combinedInstructionsText,
+      userId: user.id
     });
     schemaJson = profile;
   } catch (error) {

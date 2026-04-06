@@ -1,12 +1,22 @@
 import { getOpenAIClient } from "@/lib/llm/openai";
+import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const DEFAULT_VISION_MODEL = "gpt-4o-mini";
 
-export async function ocrImage(buffer: Buffer, contentType: string): Promise<string> {
+export async function ocrImage(
+  buffer: Buffer,
+  contentType: string,
+  usageContext?: {
+    userId?: string | null;
+    documentId?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }
+): Promise<string> {
   const client = getOpenAIClient();
   const base64 = buffer.toString("base64");
+  const model = process.env.OPENAI_VISION_MODEL ?? DEFAULT_VISION_MODEL;
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_VISION_MODEL ?? DEFAULT_VISION_MODEL,
+    model,
     messages: [
       {
         role: "user",
@@ -22,6 +32,16 @@ export async function ocrImage(buffer: Buffer, contentType: string): Promise<str
       }
     ],
     max_tokens: 2000
+  });
+
+  await recordOpenAiUsageEvent({
+    feature: "ocr",
+    response,
+    mode: "chat",
+    userId: usageContext?.userId ?? null,
+    documentId: usageContext?.documentId ?? null,
+    metadata: usageContext?.metadata ?? null,
+    modelOverride: model
   });
 
   return response.choices[0]?.message?.content?.trim() ?? "";

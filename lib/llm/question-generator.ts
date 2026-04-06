@@ -3,6 +3,7 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { GeneratedQuestionSchema, type GeneratedQuestion } from "@/lib/llm/schemas/question";
 import { logger } from "@/lib/observability/logger";
+import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
 
@@ -226,6 +227,9 @@ export async function generateQuestion(params: {
   difficulty: number;
   questionType?: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   chunks: RetrievalChunk[];
+  userId?: string | null;
+  documentId?: string | null;
+  metadata?: Record<string, unknown> | null;
 }): Promise<GeneratedQuestion> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "question-generation.md");
   const system = await fs.readFile(promptPath, "utf8");
@@ -254,6 +258,22 @@ export async function generateQuestion(params: {
       { role: "user", content: user }
     ],
     response_format: { type: "json_object" }
+  });
+
+  await recordOpenAiUsageEvent({
+    feature: "question_generation",
+    response,
+    mode: "chat",
+    userId: params.userId ?? null,
+    documentId: params.documentId ?? null,
+    metadata: {
+      difficulty: params.difficulty,
+      questionType: requestedType,
+      chunkCount: params.chunks.length,
+      hasStyleProfile: Boolean(params.styleProfile && Object.keys(params.styleProfile as object).length > 0),
+      ...(params.metadata ?? {})
+    },
+    modelOverride: MODEL
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

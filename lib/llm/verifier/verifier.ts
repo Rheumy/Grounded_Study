@@ -3,6 +3,7 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { logger } from "@/lib/observability/logger";
 import type { GeneratedQuestion } from "@/lib/llm/schemas/question";
+import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
 
@@ -44,6 +45,10 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
 export async function verifyQuestion(params: {
   question: GeneratedQuestion;
   chunks: { id: string; content: string; page: number | null }[];
+  userId?: string | null;
+  questionId?: string | null;
+  documentId?: string | null;
+  metadata?: Record<string, unknown> | null;
 }): Promise<VerifierResult> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "question-verifier.md");
   const system = await fs.readFile(promptPath, "utf8");
@@ -62,6 +67,22 @@ export async function verifyQuestion(params: {
       { role: "user", content: user }
     ],
     response_format: { type: "json_object" }
+  });
+
+  await recordOpenAiUsageEvent({
+    feature: "question_verification",
+    response,
+    mode: "chat",
+    userId: params.userId ?? null,
+    questionId: params.questionId ?? null,
+    documentId: params.documentId ?? null,
+    metadata: {
+      questionType: params.question.type,
+      difficulty: params.question.difficulty,
+      chunkCount: params.chunks.length,
+      ...(params.metadata ?? {})
+    },
+    modelOverride: MODEL
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

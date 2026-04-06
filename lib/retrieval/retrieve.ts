@@ -15,6 +15,7 @@ export async function retrieveChunks(params: {
   query: string;
   documentIds: string[];
   limit?: number;
+  userId?: string | null;
 }): Promise<RetrievedChunk[]> {
   logger.info(
     {
@@ -25,7 +26,16 @@ export async function retrieveChunks(params: {
     "Retrieval invoked"
   );
 
-  const vector = await embedText(params.query);
+  const vector = await embedText(params.query, {
+    feature: "retrieval_query_embedding",
+    userId: params.userId ?? null,
+    documentId: params.documentIds.length === 1 ? params.documentIds[0] : null,
+    metadata: {
+      documentCount: params.documentIds.length,
+      limit: params.limit ?? 6,
+      queryLength: params.query.length
+    }
+  });
   const vectorLiteral = `[${vector.join(",")}]`;
   const limit = params.limit ?? 6;
 

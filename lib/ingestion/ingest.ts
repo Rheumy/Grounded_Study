@@ -2,14 +2,16 @@ import crypto from "crypto";
 import { extractPdfText } from "@/lib/ingestion/pdf";
 import { chunkText, hashChunk } from "@/lib/ingestion/chunk";
 import { insertChunk } from "@/lib/ingestion/store";
-import { embedText } from "@/lib/llm/embeddings";
+import { EMBEDDING_MODEL, embedTextWithUsage } from "@/lib/llm/embeddings";
 import { ocrImage } from "@/lib/ingestion/ocr";
+import { recordAiUsageEvent } from "@/lib/observability/ai-usage";
 import { logger } from "@/lib/observability/logger";
 
 const MAX_CHUNK_CHARS = 1200;
 const CHUNK_OVERLAP = 200;
 
 export async function ingestDocument(params: {
+  ownerId: string;
   documentId: string;
   sourceType: "PDF" | "IMAGE" | "TEXT";
   buffer: Buffer;
@@ -21,7 +23,14 @@ export async function ingestDocument(params: {
   if (params.sourceType === "PDF") {
     pages = await extractPdfText(params.buffer, maxPages);
   } else if (params.sourceType === "IMAGE") {
-    const text = await ocrImage(params.buffer, params.contentType);
+    const text = await ocrImage(params.buffer, params.contentType, {
+      userId: params.ownerId,
+      documentId: params.documentId,
+      metadata: {
+        source: "document_ingestion",
+        contentType: params.contentType
+      }
+    });
     pages = text ? [{ page: 1, text }] : [];
   } else {
     const text = params.buffer.toString("utf8");
@@ -51,9 +60,12 @@ export async function ingestDocument(params: {
   );
 
   let chunkIndex = 0;
+  let totalEmbeddingInputTokens = 0;
+  let totalEmbeddingTokens = 0;
+  let totalEmbeddingCostUsd = 0;
   for (const preparedChunk of preparedChunks) {
     const chunk = preparedChunk.chunk;
-    const embedding = await embedText(chunk);
+    const { vector: embedding, usage } = await embedTextWithUsage(chunk);
     const hash = hashChunk(chunk);
     await insertChunk({
       id: crypto.randomUUID(),
@@ -64,7 +76,29 @@ export async function ingestDocument(params: {
       chunkIndex,
       hash
     });
+    totalEmbeddingInputTokens += usage.inputTokens ?? 0;
+    totalEmbeddingTokens += usage.totalTokens ?? 0;
+    totalEmbeddingCostUsd += usage.estimatedCostUsd;
     chunkIndex += 1;
+  }
+
+  if (chunkIndex > 0) {
+    await recordAiUsageEvent({
+      feature: "document_embedding",
+      provider: "openai",
+      model: EMBEDDING_MODEL,
+      userId: params.ownerId,
+      documentId: params.documentId,
+      inputTokens: totalEmbeddingInputTokens,
+      outputTokens: 0,
+      totalTokens: totalEmbeddingTokens,
+      metadata: {
+        sourceType: params.sourceType,
+        chunkCount: chunkIndex,
+        pageCount: pages.length,
+        estimatedCostUsd: Number(totalEmbeddingCostUsd.toFixed(8))
+      }
+    });
   }
 
   logger.info(

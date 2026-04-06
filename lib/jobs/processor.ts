@@ -33,6 +33,7 @@ export async function processIngestionJob(jobId: string) {
   const buffer = await readFile(document.storageKey);
   try {
     const { chunkCount, pageCount } = await ingestDocument({
+      ownerId: document.ownerId,
       documentId: document.id,
       sourceType: document.sourceType,
       buffer,

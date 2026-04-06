@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { type ShortAnswerGrade } from "@/lib/llm/schemas/grading";
+import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
 
@@ -54,6 +55,9 @@ export async function gradeShortAnswer(params: {
   expectedAnswer: string;
   studentAnswer: string;
   citations: { excerpt: string; chunkId: string; page?: number | null }[];
+  userId?: string | null;
+  questionId?: string | null;
+  metadata?: Record<string, unknown> | null;
 }): Promise<ShortAnswerGrade> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "short-answer-grader.md");
   const system = await fs.readFile(promptPath, "utf8");
@@ -73,6 +77,21 @@ export async function gradeShortAnswer(params: {
       { role: "user", content: user }
     ],
     response_format: { type: "json_object" }
+  });
+
+  await recordOpenAiUsageEvent({
+    feature: "short_answer_grading",
+    response,
+    mode: "chat",
+    userId: params.userId ?? null,
+    questionId: params.questionId ?? null,
+    metadata: {
+      citationCount: params.citations.length,
+      expectedAnswerLength: params.expectedAnswer.length,
+      studentAnswerLength: params.studentAnswer.length,
+      ...(params.metadata ?? {})
+    },
+    modelOverride: MODEL
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

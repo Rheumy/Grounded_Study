@@ -3,6 +3,7 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { StyleProfileSchema, type StyleProfile } from "@/lib/llm/schemas/style-profile";
 import { logger } from "@/lib/observability/logger";
+import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
 
@@ -245,6 +246,7 @@ export async function extractStyleProfile(params: {
   examplesImagesText?: string | null;
   sampleFilesText?: string | null;
   instructionsText?: string | null;
+  userId?: string | null;
 }): Promise<StyleProfile> {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "style-profile.md");
   const system = await fs.readFile(promptPath, "utf8");
@@ -269,6 +271,19 @@ export async function extractStyleProfile(params: {
       { role: "user", content: user }
     ],
     response_format: { type: "json_object" }
+  });
+
+  await recordOpenAiUsageEvent({
+    feature: "style_profile_extraction",
+    response,
+    mode: "chat",
+    userId: params.userId ?? null,
+    metadata: {
+      hasExamplesText: Boolean(params.examplesText),
+      hasSampleFilesText: Boolean(params.sampleFilesText || params.examplesImagesText),
+      hasInstructionsText: Boolean(params.instructionsText)
+    },
+    modelOverride: MODEL
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

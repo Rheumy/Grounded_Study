@@ -76,6 +76,7 @@ model User {
   spacedRepetitionSchedules SpacedRepetitionSchedule[]
   auditLogs      AuditLog[] @relation("ActorLogs")
   usageCounters  UsageCounter[]
+  aiUsageEvents  AiUsageEvent[]
 }
 
 model Account {
@@ -144,6 +145,7 @@ model Document {
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   chunks DocumentChunk[]
   ingestionJobs IngestionJob[]
+  aiUsageEvents AiUsageEvent[]
 
   @@index([ownerId])
   @@index([status])
@@ -219,6 +221,7 @@ model Question {
   practiceAttempts PracticeAttempt[]
   examSessionQuestions ExamSessionQuestion[]
   spacedRepetitionSchedules SpacedRepetitionSchedule[]
+  aiUsageEvents AiUsageEvent[]
 
   @@index([ownerId])
   @@index([difficulty])
@@ -305,6 +308,33 @@ model UsageCounter {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, day])
+}
+
+model AiUsageEvent {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  userId           String?
+  documentId       String?
+  questionId       String?
+  feature          String
+  provider         String
+  model            String
+  inputTokens      Int?
+  outputTokens     Int?
+  totalTokens      Int?
+  estimatedCostUsd Decimal  @default(0) @db.Decimal(12, 8)
+  metadataJson     Json?
+
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([feature])
+  @@index([model])
+  @@index([userId])
+  @@index([documentId])
+  @@index([questionId])
 }
 
 model RateLimit {

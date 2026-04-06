@@ -44,7 +44,12 @@ export async function POST(request: Request) {
         question: question.stem,
         expectedAnswer: question.answer,
         studentAnswer: selectedAnswer,
-        citations
+        citations,
+        userId: user.id,
+        questionId: question.id,
+        metadata: {
+          flow: "practice_answer"
+        }
       });
       graderReason = grade.reason;
       if (grade.verdict === "NEEDS_REVIEW") {
