@@ -11,6 +11,20 @@ const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE
 const devBypassEnabled =
   process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_BYPASS === "true";
 
+function getBetaAllowedEmails(): Set<string> | null {
+  const raw = process.env.BETA_ALLOWED_EMAILS;
+  if (!raw?.trim()) {
+    return null;
+  }
+
+  const emails = raw
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  return emails.length > 0 ? new Set(emails) : null;
+}
+
 export const authOptions: NextAuthOptions = {
   // @ts-expect-error - NextAuth and PrismaAdapter types often mismatch slightly
   adapter: PrismaAdapter(prisma),
@@ -58,6 +72,24 @@ export const authOptions: NextAuthOptions = {
       : [])
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider !== "google") {
+        return true;
+      }
+
+      const allowedEmails = getBetaAllowedEmails();
+      if (!allowedEmails) {
+        return true;
+      }
+
+      const email = user.email?.trim().toLowerCase();
+      if (email && allowedEmails.has(email)) {
+        return true;
+      }
+
+      logger.warn({ email: user.email ?? null }, "Blocked Google sign-in outside beta allowlist");
+      return "/auth/not-allowed";
+    },
     // 1. Pass the user ID into the JWT token during sign in
     async jwt({ token, user }) {
       if (user) {
