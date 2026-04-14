@@ -9,6 +9,7 @@ import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 const MAX_RETRIES = 3;
 
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
 
 export type TypeMix = {
   MCQ?: number;
@@ -27,6 +28,19 @@ async function getRandomChunkSnippet(documentIds: string[]) {
     LIMIT 1
   `;
   return chunk[0]?.content?.slice(0, 200) ?? "core concepts";
+}
+
+function shouldRefreshRetrievalAfterVerifierFailure(reason: string) {
+  const normalized = reason.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  if (normalized.startsWith("verifier returned")) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -136,17 +150,35 @@ export async function generateQuestions(params: {
     const questionType = typeSlots[i] ?? "MCQ";
     let saved = false;
     let reason = "";
+    let retryMode: RetryMode = "initial_retrieval";
+    let currentQuery = "";
+    let currentChunks: RetrievalChunk[] = [];
 
     for (let attempt = 0; attempt < MAX_RETRIES && !saved; attempt += 1) {
-      const query = await getRandomChunkSnippet(params.documentIds);
-      const chunks = await retrieveChunks({
-        query,
-        documentIds: params.documentIds,
-        limit: 6
-      });
+      if (retryMode !== "same_chunks" || currentChunks.length === 0) {
+        currentQuery = await getRandomChunkSnippet(params.documentIds);
+        currentChunks = await retrieveChunks({
+          query: currentQuery,
+          documentIds: params.documentIds,
+          limit: 6,
+          userId: params.ownerId
+        });
+      }
 
-      if (chunks.length === 0) {
+      logger.info(
+        {
+          ownerId: params.ownerId,
+          questionType,
+          attempt: attempt + 1,
+          retryMode,
+          chunkCount: currentChunks.length
+        },
+        "Generation attempt started"
+      );
+
+      if (currentChunks.length === 0) {
         reason = "No chunks available";
+        retryMode = "refreshed_retrieval";
         continue;
       }
 
@@ -156,7 +188,14 @@ export async function generateQuestions(params: {
           styleProfile: styleProfile?.schemaJson ?? {},
           difficulty: params.difficulty,
           questionType,
-          chunks
+          chunks: currentChunks,
+          userId: params.ownerId,
+          documentId: params.documentIds.length === 1 ? params.documentIds[0] : null,
+          metadata: {
+            attempt: attempt + 1,
+            requestedCount: params.count,
+            styleProfileId: params.styleProfileId
+          }
         });
       } catch (genError) {
         // Log the raw error (e.g. Zod validation failure on LLM output) and retry
@@ -164,26 +203,30 @@ export async function generateQuestions(params: {
           {
             ownerId: params.ownerId,
             questionType,
-            attempt,
+            attempt: attempt + 1,
+            retryMode: "same_chunks",
             error: genError instanceof Error ? genError.message : String(genError)
           },
-          "generateQuestion threw — likely malformed LLM output, retrying"
+          "generateQuestion threw — retrying with same chunks"
         );
         reason = "Question generation produced an invalid response";
+        retryMode = "same_chunks";
         continue;
       }
 
       if (generated.verifierStatus === "INSUFFICIENT_EVIDENCE") {
         reason = "Insufficient evidence";
+        retryMode = "refreshed_retrieval";
         continue;
       }
 
-      const chunkIds = new Set(chunks.map((chunk) => chunk.id));
+      const chunkIds = new Set(currentChunks.map((chunk) => chunk.id));
       const citationsValid = generated.citations.every((citation) =>
         chunkIds.has(citation.chunkId)
       );
       if (!citationsValid) {
         reason = "Citations reference unknown chunks";
+        retryMode = "refreshed_retrieval";
         continue;
       }
 
@@ -191,24 +234,35 @@ export async function generateQuestions(params: {
       try {
         verifier = await verifyQuestion({
           question: generated,
-          chunks
+          chunks: currentChunks,
+          userId: params.ownerId,
+          documentId: params.documentIds.length === 1 ? params.documentIds[0] : null,
+          metadata: {
+            attempt: attempt + 1,
+            requestedCount: params.count
+          }
         });
       } catch (verifyError) {
         logger.warn(
           {
             ownerId: params.ownerId,
             questionType,
-            attempt,
+            attempt: attempt + 1,
+            retryMode: "same_chunks",
             error: verifyError instanceof Error ? verifyError.message : String(verifyError)
           },
-          "verifyQuestion threw — treating as FAILED, retrying"
+          "verifyQuestion threw — retrying with same chunks"
         );
         reason = "Verification step failed unexpectedly";
+        retryMode = "same_chunks";
         continue;
       }
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;
+        retryMode = shouldRefreshRetrievalAfterVerifierFailure(verifier.reason)
+          ? "refreshed_retrieval"
+          : "same_chunks";
         continue;
       }
 

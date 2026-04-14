@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
+import { resolveUserUploadCaps, bytesToDisplayMb, isSplitCandidate } from "@/lib/billing/upload-limits";
 import { prisma } from "@/lib/db/prisma";
+import { resolveDocumentSourceType } from "@/lib/documents/source-type";
 import { validateUpload } from "@/lib/security/file-validation";
 import { sanitizeFilename } from "@/lib/security/sanitize";
 import { rateLimit } from "@/lib/security/rate-limit";
@@ -28,12 +30,7 @@ async function createDocumentFromValidatedUpload(params: {
       id: crypto.randomUUID(),
       ownerId: params.ownerId,
       title: params.fileName,
-      sourceType:
-        params.fileInfo.kind === "pdf"
-          ? "PDF"
-          : params.fileInfo.kind === "text"
-            ? "TEXT"
-            : "IMAGE",
+      sourceType: resolveDocumentSourceType(params.fileInfo.kind),
       contentType: params.fileInfo.mime,
       storageKey: params.storageKey,
       status: "QUEUED"
@@ -61,6 +58,56 @@ async function createDocumentFromValidatedUpload(params: {
   );
 
   return document;
+}
+
+function buildFileTooLargeResponse(params: {
+  kind: "pdf" | "image" | "text" | "docx";
+  sizeBytes: number;
+  caps: Awaited<ReturnType<typeof resolveUserUploadCaps>>;
+}) {
+  const actualMb = bytesToDisplayMb(params.sizeBytes);
+  const absoluteMaxBytes = params.caps.absoluteMaxMb * 1024 * 1024;
+
+  if (params.sizeBytes > absoluteMaxBytes) {
+    return NextResponse.json(
+      {
+        error: `File exceeds the current platform maximum of ${params.caps.absoluteMaxMb} MB.`,
+        code: "FILE_TOO_LARGE",
+        maxMb: params.caps.absoluteMaxMb,
+        actualMb,
+        upgradeRequired: false,
+        splitSupportedLater: false
+      },
+      { status: 400 }
+    );
+  }
+
+  const upgradeRequired =
+    params.caps.plan === "FREE" && params.sizeBytes <= params.caps.proMaxMb * 1024 * 1024;
+
+  const error =
+    params.caps.plan === "FREE"
+      ? upgradeRequired
+        ? `File too large for your current plan. Free uploads support files up to ${params.caps.planMaxMb} MB. Upgrade to Pro for uploads up to ${params.caps.proMaxMb} MB.`
+        : `File too large for your current plan. Free uploads support files up to ${params.caps.planMaxMb} MB, and the current Pro limit is ${params.caps.proMaxMb} MB.`
+      : `File too large for your current plan. Pro uploads support files up to ${params.caps.planMaxMb} MB.`;
+
+  return NextResponse.json(
+    {
+      error,
+      code: "FILE_TOO_LARGE",
+      maxMb: params.caps.planMaxMb,
+      actualMb,
+      upgradeRequired,
+      splitSupportedLater: isSplitCandidate({
+        kind: params.kind,
+        sizeBytes: params.sizeBytes,
+        planMaxMb: params.caps.planMaxMb,
+        absoluteMaxMb: params.caps.absoluteMaxMb
+      })
+    },
+    { status: 400 }
+  );
 }
 
 export async function POST(request: Request) {
@@ -105,13 +152,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const validation = await validateUpload(buffer, fileName, buffer.length);
+    const uploadCaps = await resolveUserUploadCaps(user.id);
+    const validation = await validateUpload(buffer, fileName, buffer.length, {
+      maxMb: uploadCaps.planMaxMb
+    });
     if (!validation.allowed || !validation.fileInfo) {
       await deleteFile(storageKey).catch(() => undefined);
       logger.error(
-        { userId: user.id, storageKey, fileName, message: validation.error ?? "Invalid upload" },
+        {
+          userId: user.id,
+          storageKey,
+          fileName,
+          message: validation.error ?? "Invalid upload",
+          code: validation.code ?? null
+        },
         "Upload finalize validation failed"
       );
+      if (validation.code === "FILE_TOO_LARGE" && validation.fileInfo) {
+        // TODO: A future preprocessing job can split oversized PDFs into child documents by page
+        // range or bookmarks before ingestion. For now we only expose split-candidate metadata.
+        return buildFileTooLargeResponse({
+          kind: validation.fileInfo.kind,
+          sizeBytes: buffer.length,
+          caps: uploadCaps
+        });
+      }
       return NextResponse.json({ error: validation.error ?? "Invalid upload" }, { status: 400 });
     }
 
@@ -144,6 +209,7 @@ export async function POST(request: Request) {
     }
   }
 
+  const uploadCaps = await resolveUserUploadCaps(user.id);
   const formData = await request.formData();
   const file = formData.get("file");
   if (!file || !(file instanceof File)) {
@@ -151,8 +217,17 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const validation = await validateUpload(buffer, file.name, file.size);
+  const validation = await validateUpload(buffer, file.name, file.size, {
+    maxMb: uploadCaps.planMaxMb
+  });
   if (!validation.allowed || !validation.fileInfo) {
+    if (validation.code === "FILE_TOO_LARGE" && validation.fileInfo) {
+      return buildFileTooLargeResponse({
+        kind: validation.fileInfo.kind,
+        sizeBytes: file.size,
+        caps: uploadCaps
+      });
+    }
     return NextResponse.json({ error: validation.error ?? "Invalid upload" }, { status: 400 });
   }
 

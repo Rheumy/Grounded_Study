@@ -1,5 +1,6 @@
 import { fileTypeFromBuffer } from "file-type";
 import { imageSize } from "image-size";
+import { bytesToDisplayMb } from "@/lib/billing/upload-limits";
 
 const DEFAULT_MAX_MB = 20;
 const DEFAULT_MAX_PDF_PAGES = 400;
@@ -14,12 +15,17 @@ export type AllowedUpload = {
 export type UploadValidationResult = {
   allowed: boolean;
   error?: string;
+  code?: "FILE_TOO_LARGE";
   meta?: {
     pagesLimit: number;
     imagePixelsLimit: number;
   };
   fileInfo?: AllowedUpload;
   image?: { width: number; height: number };
+  oversized?: {
+    maxMb: number;
+    actualMb: number;
+  };
 };
 
 const ALLOWED_IMAGE_MIMES = new Set([
@@ -31,18 +37,25 @@ const ALLOWED_IMAGE_MIMES = new Set([
   "image/tiff"
 ]);
 
-const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function getValidationMeta() {
+  return {
+    pagesLimit: Number(process.env.MAX_PDF_PAGES ?? DEFAULT_MAX_PDF_PAGES),
+    imagePixelsLimit: Number(process.env.MAX_IMAGE_PIXELS ?? DEFAULT_MAX_IMAGE_PIXELS)
+  };
+}
 
 export async function validateUpload(
   buffer: Buffer,
   _filename: string,
-  size: number
+  size: number,
+  options?: { maxMb?: number }
 ): Promise<UploadValidationResult> {
-  const maxMb = Number(process.env.MAX_UPLOAD_MB ?? DEFAULT_MAX_MB);
+  const maxMb = options?.maxMb ?? Number(process.env.MAX_UPLOAD_MB ?? DEFAULT_MAX_MB);
   const maxBytes = maxMb * 1024 * 1024;
-  if (size > maxBytes) {
-    return { allowed: false, error: `File too large. Max ${maxMb}MB.` };
-  }
+  const validationMeta = getValidationMeta();
 
   const type = await fileTypeFromBuffer(buffer);
   if (!type) {
@@ -52,37 +65,76 @@ export async function validateUpload(
         (byte) => byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126)
       );
     if (isText) {
+      if (size > maxBytes) {
+        return {
+          allowed: false,
+          code: "FILE_TOO_LARGE",
+          error: "File too large for your current plan.",
+          fileInfo: { kind: "text", mime: "text/plain", extension: "txt" },
+          meta: validationMeta,
+          oversized: { maxMb, actualMb: bytesToDisplayMb(size) }
+        };
+      }
+
       return {
         allowed: true,
         fileInfo: { kind: "text", mime: "text/plain", extension: "txt" },
-        meta: {
-          pagesLimit: Number(process.env.MAX_PDF_PAGES ?? DEFAULT_MAX_PDF_PAGES),
-          imagePixelsLimit: Number(process.env.MAX_IMAGE_PIXELS ?? DEFAULT_MAX_IMAGE_PIXELS)
-        }
+        meta: validationMeta
       };
     }
     return { allowed: false, error: "Unable to detect file type." };
   }
 
   if (type.mime === "application/pdf") {
+    if (size > maxBytes) {
+      return {
+        allowed: false,
+        code: "FILE_TOO_LARGE",
+        error: "File too large for your current plan.",
+        fileInfo: { kind: "pdf", mime: type.mime, extension: type.ext },
+        meta: validationMeta,
+        oversized: { maxMb, actualMb: bytesToDisplayMb(size) }
+      };
+    }
+
     return {
       allowed: true,
       fileInfo: { kind: "pdf", mime: type.mime, extension: type.ext },
-      meta: {
-        pagesLimit: Number(process.env.MAX_PDF_PAGES ?? DEFAULT_MAX_PDF_PAGES),
-        imagePixelsLimit: Number(process.env.MAX_IMAGE_PIXELS ?? DEFAULT_MAX_IMAGE_PIXELS)
-      }
+      meta: validationMeta
     };
   }
 
   if (type.mime === DOCX_MIME) {
+    if (size > maxBytes) {
+      return {
+        allowed: false,
+        code: "FILE_TOO_LARGE",
+        error: "File too large for your current plan.",
+        fileInfo: { kind: "docx", mime: type.mime, extension: type.ext },
+        meta: validationMeta,
+        oversized: { maxMb, actualMb: bytesToDisplayMb(size) }
+      };
+    }
+
     return {
       allowed: true,
-      fileInfo: { kind: "docx", mime: type.mime, extension: type.ext }
+      fileInfo: { kind: "docx", mime: type.mime, extension: type.ext },
+      meta: validationMeta
     };
   }
 
   if (ALLOWED_IMAGE_MIMES.has(type.mime)) {
+    if (size > maxBytes) {
+      return {
+        allowed: false,
+        code: "FILE_TOO_LARGE",
+        error: "File too large for your current plan.",
+        fileInfo: { kind: "image", mime: type.mime, extension: type.ext },
+        meta: validationMeta,
+        oversized: { maxMb, actualMb: bytesToDisplayMb(size) }
+      };
+    }
+
     const { width, height } = imageSize(buffer);
     if (!width || !height) {
       return { allowed: false, error: "Invalid image dimensions." };
@@ -96,10 +148,7 @@ export async function validateUpload(
       allowed: true,
       fileInfo: { kind: "image", mime: type.mime, extension: type.ext },
       image: { width, height },
-      meta: {
-        pagesLimit: Number(process.env.MAX_PDF_PAGES ?? DEFAULT_MAX_PDF_PAGES),
-        imagePixelsLimit: maxPixels
-      }
+      meta: { ...validationMeta, imagePixelsLimit: maxPixels }
     };
   }
 

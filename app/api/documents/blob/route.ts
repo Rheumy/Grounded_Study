@@ -2,11 +2,18 @@ import path from "path";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
+import { resolveUserUploadCaps } from "@/lib/billing/upload-limits";
 import { sanitizeFilename } from "@/lib/security/sanitize";
+import { DOCX_MIME } from "@/lib/security/file-validation";
 import { logger } from "@/lib/observability/logger";
 
-const DEFAULT_MAX_MB = 20;
-const ALLOWED_CONTENT_TYPES = ["application/pdf", "text/plain", "image/png", "image/jpeg"];
+const ALLOWED_CONTENT_TYPES = [
+  "application/pdf",
+  "text/plain",
+  DOCX_MIME,
+  "image/png",
+  "image/jpeg"
+];
 const UUID_LIKE = /^[0-9a-f-]{36}$/i;
 
 function validatePathname(pathnameValue: string, userId: string) {
@@ -56,12 +63,12 @@ export async function POST(request: Request) {
         }
 
         validatePathname(pathnameValue, user.id);
+        const uploadCaps = await resolveUserUploadCaps(user.id);
 
-        const maxMb = Number(process.env.MAX_UPLOAD_MB ?? DEFAULT_MAX_MB);
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
           addRandomSuffix: false,
-          maximumSizeInBytes: maxMb * 1024 * 1024,
+          maximumSizeInBytes: uploadCaps.absoluteMaxMb * 1024 * 1024,
           tokenPayload: JSON.stringify({ userId: user.id })
         };
       },

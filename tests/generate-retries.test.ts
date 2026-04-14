@@ -1,0 +1,137 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/db/prisma", () => ({
+  prisma: {
+    $queryRaw: vi.fn(),
+    styleProfile: {
+      findFirst: vi.fn()
+    },
+    question: {
+      create: vi.fn()
+    }
+  }
+}));
+
+vi.mock("@/lib/llm/question-generator", () => ({
+  generateQuestion: vi.fn()
+}));
+
+vi.mock("@/lib/llm/verifier/verifier", () => ({
+  verifyQuestion: vi.fn()
+}));
+
+vi.mock("@/lib/retrieval/retrieve", () => ({
+  retrieveChunks: vi.fn()
+}));
+
+vi.mock("@/lib/feedback/user-facing", () => ({
+  sanitizeFeedbackText: (value: string) => value
+}));
+
+vi.mock("@/lib/observability/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn()
+  }
+}));
+
+import { prisma } from "@/lib/db/prisma";
+import { generateQuestion } from "@/lib/llm/question-generator";
+import { generateQuestions } from "@/lib/llm/generate";
+import { retrieveChunks } from "@/lib/retrieval/retrieve";
+import { verifyQuestion } from "@/lib/llm/verifier/verifier";
+
+const seedChunk = {
+  id: "seed-1",
+  documentId: "doc-1",
+  content: "Seed text for retrieval",
+  page: 1,
+  chunkIndex: 0
+};
+
+const chunkA = {
+  id: "chunk-a",
+  documentId: "doc-1",
+  content: "Evidence A",
+  page: 1,
+  chunkIndex: 0
+};
+
+const chunkB = {
+  id: "chunk-b",
+  documentId: "doc-1",
+  content: "Evidence B",
+  page: 2,
+  chunkIndex: 1
+};
+
+function buildGeneratedQuestion(chunkId: string, overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    type: "MCQ" as const,
+    stem: "What does the source support?",
+    options: ["A", "B", "C", "D"],
+    answer: "A",
+    rationale: "Because the source says so.",
+    citations: [{ chunkId, excerpt: "Evidence", page: 1 }],
+    difficulty: 2,
+    tags: ["test"],
+    verifierStatus: "PENDING" as const,
+    ...overrides
+  };
+}
+
+describe("generation retries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (prisma.$queryRaw as any).mockResolvedValue([seedChunk]);
+    (prisma.question.create as any).mockResolvedValue({ id: "question-1" });
+  });
+
+  it("reuses the same retrieval when generation fails with malformed model output", async () => {
+    (retrieveChunks as any).mockResolvedValue([chunkA]);
+    (generateQuestion as any)
+      .mockRejectedValueOnce(new Error("Model returned non-JSON content"))
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-a"));
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 2,
+      count: 1
+    });
+
+    expect(retrieveChunks).toHaveBeenCalledTimes(1);
+    expect(generateQuestion).toHaveBeenCalledTimes(2);
+    expect((generateQuestion as any).mock.calls[0][0].chunks).toBe(
+      (generateQuestion as any).mock.calls[1][0].chunks
+    );
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("refreshes retrieval when the first attempt fails for evidence reasons", async () => {
+    (retrieveChunks as any).mockResolvedValueOnce([chunkA]).mockResolvedValueOnce([chunkB]);
+    (generateQuestion as any)
+      .mockResolvedValueOnce(
+        buildGeneratedQuestion("chunk-a", { verifierStatus: "INSUFFICIENT_EVIDENCE" })
+      )
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-b"));
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 2,
+      count: 1
+    });
+
+    expect(retrieveChunks).toHaveBeenCalledTimes(2);
+    expect((generateQuestion as any).mock.calls[0][0].chunks).not.toBe(
+      (generateQuestion as any).mock.calls[1][0].chunks
+    );
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+});

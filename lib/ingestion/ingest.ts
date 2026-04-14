@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { extractPdfText } from "@/lib/ingestion/pdf";
 import { chunkText, hashChunk } from "@/lib/ingestion/chunk";
 import { insertChunk } from "@/lib/ingestion/store";
+import { extractDocxText } from "@/lib/ingestion/docx";
 import { EMBEDDING_MODEL, embedTextWithUsage } from "@/lib/llm/embeddings";
 import { ocrImage } from "@/lib/ingestion/ocr";
 import { recordAiUsageEvent } from "@/lib/observability/ai-usage";
@@ -9,6 +10,7 @@ import { logger } from "@/lib/observability/logger";
 
 const MAX_CHUNK_CHARS = 1200;
 const CHUNK_OVERLAP = 200;
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export async function ingestDocument(params: {
   ownerId: string;
@@ -31,6 +33,9 @@ export async function ingestDocument(params: {
         contentType: params.contentType
       }
     });
+    pages = text ? [{ page: 1, text }] : [];
+  } else if (params.contentType === DOCX_MIME) {
+    const text = await extractDocxText(params.buffer);
     pages = text ? [{ page: 1, text }] : [];
   } else {
     const text = params.buffer.toString("utf8");

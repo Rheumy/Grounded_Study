@@ -236,7 +236,7 @@ export function UploadForm({
       <input
         name="file"
         type="file"
-        accept="application/pdf,text/plain,image/*"
+        accept="application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,image/*"
         required
         data-testid="document-upload-input"
       />
