@@ -7,8 +7,8 @@ const navItems = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/documents", label: "Study Materials" },
   { href: "/dashboard/style-profiles", label: "Question Format" },
-  { href: "/dashboard/generate", label: "Generate Questions" },
-  { href: "/dashboard/practice", label: "Practice Questions" },
+  { href: "/dashboard/generate", label: "Create Questions" },
+  { href: "/dashboard/practice", label: "Practice" },
   { href: "/dashboard/exam", label: "Mock Exam" },
   { href: "/dashboard/analytics", label: "Progress" },
   { href: "/dashboard/billing", label: "Billing" }

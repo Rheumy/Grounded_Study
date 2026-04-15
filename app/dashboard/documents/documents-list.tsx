@@ -29,7 +29,7 @@ function getStatusMessage(doc: Doc): string {
   }
 
   if (doc.status === "READY") {
-    return "Ready to use. Next: go to Generate Questions.";
+    return "Ready to use. Next: go to Create Questions.";
   }
 
   if (doc.status === "OCR_DISABLED") {

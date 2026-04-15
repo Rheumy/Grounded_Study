@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/require-user";
+import { resolveUserGenerationCaps } from "@/lib/billing/generation-limits";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GenerateForm } from "@/app/dashboard/generate/generate-form";
 
@@ -9,6 +10,7 @@ type ProfileSchema = {
 
 export default async function GeneratePage() {
   const user = await requireUser();
+  const generationCaps = await resolveUserGenerationCaps(user.id);
   const documents = await prisma.document.findMany({
     where: { ownerId: user.id, status: "READY" },
     orderBy: { createdAt: "desc" }
@@ -35,7 +37,11 @@ export default async function GeneratePage() {
         <CardDescription>Create new questions from your selected study materials.</CardDescription>
       </CardHeader>
       <CardContent>
-        <GenerateForm documents={safeDocs} profiles={safeProfiles} />
+        <GenerateForm
+          documents={safeDocs}
+          profiles={safeProfiles}
+          maxRequestCount={generationCaps.planMaxCount}
+        />
       </CardContent>
     </Card>
   );

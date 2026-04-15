@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 type Doc = { id: string; title: string };
@@ -12,15 +13,25 @@ type Profile = {
   distribution: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } | null;
 };
 type GenerationResult = { questionId?: string; status: string; reason?: string };
+type GenerationSummary = {
+  requestedCount: number;
+  passedCount: number;
+  failedCount: number;
+};
 
 export function GenerateForm({
   documents,
-  profiles: _profiles
+  profiles: _profiles,
+  maxRequestCount
 }: {
   documents: Doc[];
   profiles: Profile[];
+  maxRequestCount: number;
 }) {
+  const router = useRouter();
   const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<GenerationSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
@@ -45,6 +56,8 @@ export function GenerateForm({
       : shortAnswerCount > 0;
 
   const submit = async () => {
+    setError(null);
+    setSummary(null);
     setLoading(true);
     setStatus("Generating questions...");
     try {
@@ -71,32 +84,28 @@ export function GenerateForm({
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        setStatus(body.error ?? "Generation failed");
+        setError(body.error ?? "Generation failed");
+        setStatus(null);
         return;
       }
 
-      const body = await response.json().catch(() => ({}));
+      const body = await response.json().catch(() => ({} as {
+        results?: GenerationResult[];
+        summary?: GenerationSummary;
+      }));
       const results = Array.isArray(body.results) ? (body.results as GenerationResult[]) : [];
-      const passedCount = results.filter((r) => r.status === "PASSED").length;
-      const insufficientCount = results.filter(
-        (r) => r.status === "INSUFFICIENT_EVIDENCE"
-      ).length;
-      const firstFailureReason =
-        results.find((r) => r.status !== "PASSED" && r.reason)?.reason ?? null;
+      const passedCount = body.summary?.passedCount ?? results.filter((r) => r.status === "PASSED").length;
+      const failedCount = body.summary?.failedCount ?? Math.max(0, results.length - passedCount);
 
-      setStatus(
-        [
-          `Generated ${passedCount} question(s).`,
-          insufficientCount > 0
-            ? `${insufficientCount} could not be created from the available material.`
-            : "Your new questions are ready in Practice Questions and Mock Exam.",
-          firstFailureReason ? `First issue: ${firstFailureReason}.` : null
-        ]
-          .filter(Boolean)
-          .join(" ")
-      );
+      setSummary({
+        requestedCount: body.summary?.requestedCount ?? count,
+        passedCount,
+        failedCount
+      });
+      setStatus(null);
     } catch {
-      setStatus("Generation failed. Please try again.");
+      setError("Generation failed. Please try again.");
+      setStatus(null);
     } finally {
       setLoading(false);
     }
@@ -154,10 +163,11 @@ export function GenerateForm({
         <input
           type="number"
           min={1}
-          max={20}
+          max={maxRequestCount}
           value={count}
           onChange={(event) => {
-            const nextCount = Number(event.target.value);
+            const rawNextCount = Number(event.target.value);
+            const nextCount = Math.min(maxRequestCount, Math.max(1, rawNextCount || 1));
             setCount(nextCount);
 
             if (questionTypeMode === "MIXED" && shortAnswerCount === 0 && trueFalseCount === 0) {
@@ -166,6 +176,7 @@ export function GenerateForm({
           }}
           className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
         />
+        <p className="text-xs text-ink/55">You can create up to {maxRequestCount} questions in one run.</p>
       </div>
 
       <div className="space-y-3 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
@@ -292,6 +303,51 @@ export function GenerateForm({
         </p>
       ) : null}
       {status ? <p className="text-xs text-ink/60">{status}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {summary ? (
+        <div className="space-y-3 rounded-lg border border-accent/20 bg-accent/[0.05] p-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-ink">
+              {summary.passedCount} {summary.passedCount === 1 ? "question" : "questions"} generated successfully.
+            </p>
+            <p className="text-sm text-ink/70">
+              {summary.failedCount > 0
+                ? `${summary.failedCount} ${summary.failedCount === 1 ? "question could" : "questions could"} not be generated.`
+                : `All ${summary.requestedCount} requested ${summary.requestedCount === 1 ? "question is" : "questions are"} ready for practice.`}
+            </p>
+            {summary.failedCount > 0 ? (
+              <p className="text-sm text-ink/70">
+                Some questions could not be generated because there was insufficient evidence or
+                the model response was invalid. You can try again.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {summary.passedCount > 0 ? (
+              <Button type="button" onClick={() => router.push("/dashboard/practice")}>
+                Start practice now
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant={summary.passedCount > 0 ? "outline" : "default"}
+              onClick={() => {
+                setSummary(null);
+                setError(null);
+                setStatus(null);
+              }}
+            >
+              Generate more
+            </Button>
+            {summary.passedCount > 0 ? (
+              <Button type="button" variant="ghost" onClick={() => router.push("/dashboard/analytics")}>
+                View progress
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

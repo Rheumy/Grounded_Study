@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
+import { resolveUserGenerationCaps } from "@/lib/billing/generation-limits";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestions, type TypeMix } from "@/lib/llm/generate";
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
@@ -15,7 +16,35 @@ export async function POST(request: Request) {
   const documentIds: string[] = body.documentIds ?? [];
   const styleProfileId: string | null = body.styleProfileId ?? null;
   const difficulty = Math.min(5, Math.max(1, Number(body.difficulty ?? 3)));
-  const count = Math.min(20, Math.max(1, Number(body.count ?? 5)));
+  const generationCaps = await resolveUserGenerationCaps(user.id);
+  const requestedCount = Math.round(Number(body.count ?? 5));
+
+  if (!Number.isFinite(requestedCount) || requestedCount < 1) {
+    return NextResponse.json({ error: "Please choose at least one question." }, { status: 400 });
+  }
+
+  if (requestedCount > generationCaps.absoluteMaxCount) {
+    return NextResponse.json(
+      {
+        error: `You can create up to ${generationCaps.absoluteMaxCount} questions in one run.`
+      },
+      { status: 400 }
+    );
+  }
+
+  if (requestedCount > generationCaps.planMaxCount) {
+    return NextResponse.json(
+      {
+        error:
+          generationCaps.plan === "FREE"
+            ? `You can create up to ${generationCaps.planMaxCount} questions in one run on the Free plan. Upgrade to Pro for up to ${generationCaps.proMaxCount} questions in one run.`
+            : `You can create up to ${generationCaps.planMaxCount} questions in one run on your current plan.`
+      },
+      { status: 400 }
+    );
+  }
+
+  const count = requestedCount;
 
   // Optional per-type counts override. Validated below if provided.
   let typeMix: TypeMix | null = null;
@@ -29,7 +58,8 @@ export async function POST(request: Request) {
       if (total !== count) {
         return NextResponse.json(
           {
-            error: `typeMix total (${total}) must equal the requested question count (${count}).`
+            error:
+              "The total across your selected question types must match the number of questions requested."
           },
           { status: 400 }
         );
@@ -94,7 +124,14 @@ export async function POST(request: Request) {
       },
       "Generate questions request completed"
     );
-    return NextResponse.json({ results });
+    return NextResponse.json({
+      results,
+      summary: {
+        requestedCount: count,
+        passedCount: passed,
+        failedCount: results.length - passed
+      }
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
     logger.error(
