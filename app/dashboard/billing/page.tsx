@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth/require-user";
 import { getOrCreateSubscription } from "@/lib/billing/subscription";
-import { PLAN_LIMITS } from "@/lib/billing/plans";
+import { resolvePlanLimits } from "@/lib/billing/plans";
 import { stripeEnabled } from "@/lib/billing/stripe";
 import { prisma } from "@/lib/db/prisma";
 import { BillingClient } from "@/app/dashboard/billing/billing-client";
@@ -9,8 +9,11 @@ import { BillingClient } from "@/app/dashboard/billing/billing-client";
 export default async function BillingPage() {
   const user = await requireUser();
   const subscription = await getOrCreateSubscription(user.id);
-  const limits = PLAN_LIMITS[subscription.plan];
-  const day = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+  const limits = resolvePlanLimits(subscription.plan);
+
+  const now = new Date();
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
   const counter = await prisma.usageCounter.findUnique({
     where: { userId_day: { userId: user.id, day } }
   });
@@ -24,8 +27,8 @@ export default async function BillingPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Billing & plan</CardTitle>
-        <CardDescription>Upgrade to Pro for higher limits.</CardDescription>
+        <CardTitle>Billing &amp; plan</CardTitle>
+        <CardDescription>Review your current plan and daily usage limits.</CardDescription>
       </CardHeader>
       <CardContent>
         <BillingClient
