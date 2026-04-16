@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestion, type RetrievalChunk } from "@/lib/llm/question-generator";
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
-import { retrieveChunks } from "@/lib/retrieval/retrieve";
+import { getNonEducationalChunkReason, retrieveChunks } from "@/lib/retrieval/retrieve";
 import { logger } from "@/lib/observability/logger";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
@@ -20,14 +20,26 @@ export type TypeMix = {
 async function getRandomChunkSnippet(documentIds: string[]) {
   if (documentIds.length === 0) return "core concepts";
   const ids = Prisma.join(documentIds);
-  const chunk = await prisma.$queryRaw<RetrievalChunk[]>`
+  const chunks = await prisma.$queryRaw<RetrievalChunk[]>`
     SELECT "id", "documentId", "content", "page", "chunkIndex"
     FROM "DocumentChunk"
     WHERE "documentId" IN (${ids})
     ORDER BY random()
-    LIMIT 1
+    LIMIT 12
   `;
-  return chunk[0]?.content?.slice(0, 200) ?? "core concepts";
+  const chunk = chunks.find((candidate) => !getNonEducationalChunkReason(candidate.content));
+
+  if (!chunk && chunks.length > 0) {
+    logger.info(
+      {
+        documentCount: documentIds.length,
+        sampledChunkCount: chunks.length
+      },
+      "Random retrieval seed fell back because sampled chunks looked non-educational"
+    );
+  }
+
+  return chunk?.content?.slice(0, 200) ?? "core concepts and key principles";
 }
 
 function shouldRefreshRetrievalAfterVerifierFailure(reason: string) {
@@ -177,7 +189,7 @@ export async function generateQuestions(params: {
       );
 
       if (currentChunks.length === 0) {
-        reason = "No chunks available";
+        reason = "No suitable study content was available for a grounded question";
         retryMode = "refreshed_retrieval";
         continue;
       }
@@ -260,6 +272,17 @@ export async function generateQuestions(params: {
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;
+        if (verifier.failureCodes?.includes("LOW_EDUCATIONAL_VALUE")) {
+          logger.info(
+            {
+              ownerId: params.ownerId,
+              questionType,
+              attempt: attempt + 1,
+              reason: verifier.reason
+            },
+            "Verifier rejected low-educational-value question"
+          );
+        }
         retryMode = shouldRefreshRetrievalAfterVerifierFailure(verifier.reason)
           ? "refreshed_retrieval"
           : "same_chunks";

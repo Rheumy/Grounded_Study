@@ -7,7 +7,12 @@ import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
 
-export type VerifierResult = { status: "PASSED" | "FAILED"; reason: string };
+export type VerifierResult = {
+  status: "PASSED" | "FAILED";
+  reason: string;
+  failureCodes?: string[];
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
+};
 
 // ---------------------------------------------------------------------------
 // Normalise the model's raw verifier response.
@@ -39,7 +44,23 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
     rawStatus === "VALID" ||
     rawStatus === "OK";
 
-  return { status: isPass ? "PASSED" : "FAILED", reason };
+  const failureCodes = Array.isArray(obj.failureCodes)
+    ? obj.failureCodes.filter((code): code is string => typeof code === "string")
+    : [];
+  const rawConfidence = String(obj.confidence ?? "")
+    .trim()
+    .toUpperCase();
+  const confidence =
+    rawConfidence === "HIGH" || rawConfidence === "MEDIUM" || rawConfidence === "LOW"
+      ? rawConfidence
+      : undefined;
+
+  return {
+    status: isPass ? "PASSED" : "FAILED",
+    reason,
+    failureCodes,
+    confidence
+  };
 }
 
 export async function verifyQuestion(params: {
