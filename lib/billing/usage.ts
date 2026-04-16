@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { PLAN_LIMITS } from "@/lib/billing/plans";
+import { resolvePlanLimits } from "./plans";
 import { getOrCreateSubscription } from "@/lib/billing/subscription";
 
 function startOfDay(date = new Date()) {
@@ -8,7 +8,7 @@ function startOfDay(date = new Date()) {
 
 export async function checkUsage(userId: string) {
   const subscription = await getOrCreateSubscription(userId);
-  const limits = PLAN_LIMITS[subscription.plan];
+  const limits = resolvePlanLimits(subscription.plan);
   const day = startOfDay();
   const counter = await prisma.usageCounter.findUnique({
     where: { userId_day: { userId, day } }
