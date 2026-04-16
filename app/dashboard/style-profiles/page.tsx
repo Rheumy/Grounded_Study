@@ -29,21 +29,20 @@ export default async function StyleProfilesPage() {
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-ink/10 bg-ink/[0.02] p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Question format</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">Capture the exam style you are studying for</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Question style</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">
+          Tell us what kind of questions you want
+        </h1>
         <p className="mt-2 max-w-3xl text-sm text-ink/65">
-          Clearer context leads to more useful questions and more grounded feedback. If you want
-          subjective or short-answer formats, include model answers, rubrics, or marking guides
-          whenever you can.
+          Add a short description, paste example questions or marking guides, or upload example files.
         </p>
       </div>
 
       <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <CardHeader>
-          <CardTitle>Create a question format</CardTitle>
+          <CardTitle>Create a question style</CardTitle>
           <CardDescription>
-            Shape how your questions should look by adding examples, optional study context, sample
-            files, or plain-English instructions.
+            File upload is optional. Text-only and text-plus-file styles both work.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -53,14 +52,13 @@ export default async function StyleProfilesPage() {
 
       <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <CardHeader>
-          <CardTitle>Saved question formats</CardTitle>
-          <CardDescription>Choose one of these when generating new questions.</CardDescription>
+          <CardTitle>Saved question styles</CardTitle>
+          <CardDescription>Use these when creating more questions later.</CardDescription>
         </CardHeader>
         <CardContent>
           {profiles.length === 0 ? (
             <p className="text-sm text-ink/60">
-              No custom question formats yet. The default format is available if you want to get
-              started straight away.
+              No saved question styles yet.
             </p>
           ) : (
             <ul className="space-y-3 text-sm">

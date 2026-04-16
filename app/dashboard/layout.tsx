@@ -6,7 +6,7 @@ import { DashboardNav } from "@/app/dashboard/dashboard-nav";
 const navItems = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/documents", label: "Study Materials" },
-  { href: "/dashboard/style-profiles", label: "Question Format" },
+  { href: "/dashboard/style-profiles", label: "Question Style" },
   { href: "/dashboard/generate", label: "Create Questions" },
   { href: "/dashboard/practice", label: "Practice" },
   { href: "/dashboard/exam", label: "Mock Exam" },
@@ -28,7 +28,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <div className="space-y-1.5 border-b border-ink/8 pb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45">Dashboard</p>
           <p className="text-sm leading-6 text-ink/60">
-            Move between study setup, practice, and review.
+            Follow the steps from study material to practice and review.
           </p>
         </div>
         <DashboardNav items={navItems} showAdmin={isAdmin} />

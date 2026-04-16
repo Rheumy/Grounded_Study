@@ -33,8 +33,8 @@ export default async function GeneratePage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Generate questions</CardTitle>
-        <CardDescription>Create new questions from your selected study materials.</CardDescription>
+        <CardTitle>Create your question bank</CardTitle>
+        <CardDescription>Create new questions from your uploaded study material.</CardDescription>
       </CardHeader>
       <CardContent>
         <GenerateForm

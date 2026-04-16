@@ -300,7 +300,7 @@ export function ExamClient() {
             <p className="text-sm font-medium text-ink">Short-answer grading note</p>
             <p className="mt-1 text-sm text-ink/65">
               If your exam includes short-answer questions, feedback is strongest when the underlying
-              question format included marking guides, model answers, or rubrics.
+              question style included marking guides, model answers, or rubrics.
             </p>
           </div>
           <Button onClick={startExam} className="shadow-sm">Start mock exam</Button>

@@ -19,6 +19,14 @@ type GenerationSummary = {
   failedCount: number;
 };
 
+const difficultyOptions = [
+  { value: 1, label: "Easy" },
+  { value: 2, label: "Moderate" },
+  { value: 3, label: "Standard exam level" },
+  { value: 4, label: "Challenging" },
+  { value: 5, label: "Very challenging" }
+] as const;
+
 export function GenerateForm({
   documents,
   profiles: _profiles,
@@ -141,20 +149,18 @@ export function GenerateForm({
       <div className="space-y-2">
         <label className="text-sm font-medium text-ink">Question difficulty</label>
         <p className="text-sm text-ink/60">Choose how challenging you want the questions to be.</p>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          value={difficulty}
-          onChange={(event) => setDifficulty(Number(event.target.value))}
-          className="w-full"
-        />
-        <div className="space-y-1 text-sm text-ink/60">
-          <p>1 Easy</p>
-          <p>2 Moderate</p>
-          <p>3 Standard exam level</p>
-          <p>4 Challenging</p>
-          <p>5 Very challenging</p>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {difficultyOptions.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              variant={difficulty === option.value ? "default" : "outline"}
+              onClick={() => setDifficulty(option.value)}
+              className="h-auto min-h-[44px] px-3 py-3 text-sm"
+            >
+              {option.label}
+            </Button>
+          ))}
         </div>
       </div>
 
@@ -279,7 +285,7 @@ export function GenerateForm({
         </p>
         {shortAnswerGuidanceVisible ? (
           <p className="text-xs text-ink/55">
-            Short-answer feedback is strongest when your materials or saved format include model
+            Short-answer feedback is strongest when your materials or saved question style include model
             answers, marking guides, or rubrics. Without them, grading is still best-effort.
           </p>
         ) : null}
@@ -307,26 +313,32 @@ export function GenerateForm({
       {summary ? (
         <div className="space-y-3 rounded-lg border border-accent/20 bg-accent/[0.05] p-4">
           <div className="space-y-1">
-            <p className="text-sm font-semibold text-ink">
-              {summary.passedCount} {summary.passedCount === 1 ? "question" : "questions"} generated successfully.
-            </p>
-            <p className="text-sm text-ink/70">
-              {summary.failedCount > 0
-                ? `${summary.failedCount} ${summary.failedCount === 1 ? "question could" : "questions could"} not be generated.`
-                : `All ${summary.requestedCount} requested ${summary.requestedCount === 1 ? "question is" : "questions are"} ready for practice.`}
-            </p>
+            {summary.passedCount > 0 ? (
+              <p className="text-sm font-semibold text-ink">Your question bank has been updated.</p>
+            ) : (
+              <p className="text-sm font-semibold text-ink">No new questions were added.</p>
+            )}
             {summary.failedCount > 0 ? (
               <p className="text-sm text-ink/70">
                 Some questions could not be generated because there was insufficient evidence or
                 the model response was invalid. You can try again.
               </p>
-            ) : null}
+            ) : (
+              <p className="text-sm text-ink/70">
+                {summary.passedCount} {summary.passedCount === 1 ? "question is" : "questions are"} ready.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2">
             {summary.passedCount > 0 ? (
               <Button type="button" onClick={() => router.push("/dashboard/practice")}>
-                Start practice now
+                Practise these questions
+              </Button>
+            ) : null}
+            {summary.passedCount > 0 ? (
+              <Button type="button" variant="outline" onClick={() => router.push("/dashboard/exam")}>
+                Start a mock exam
               </Button>
             ) : null}
             <Button
@@ -338,13 +350,8 @@ export function GenerateForm({
                 setStatus(null);
               }}
             >
-              Generate more
+              Generate more questions
             </Button>
-            {summary.passedCount > 0 ? (
-              <Button type="button" variant="ghost" onClick={() => router.push("/dashboard/analytics")}>
-                View progress
-              </Button>
-            ) : null}
           </div>
         </div>
       ) : null}
