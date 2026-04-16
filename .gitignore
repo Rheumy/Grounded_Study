@@ -11,3 +11,4 @@ coverage
 playwright-report
 tsconfig.tsbuildinfo
 test-results/
+.vercel/
