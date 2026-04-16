@@ -22,6 +22,12 @@ export async function POST(request: Request) {
     SELECT * FROM "Question"
     WHERE "ownerId" = ${user.id}
       AND "verifierStatus" = 'PASSED'
+      AND "id" NOT IN (
+        SELECT "questionId"
+        FROM "QuestionFeedback"
+        WHERE "userId" = ${user.id}
+          AND "label" IN ('DISPUTED_INCORRECT', 'IRRELEVANT')
+      )
       ${difficultyClause}
     ORDER BY random()
     LIMIT ${count}

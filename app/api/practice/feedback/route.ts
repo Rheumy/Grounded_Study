@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 const PracticeFeedbackSchema = z.object({
   questionId: z.string().trim().min(1),
   attemptId: z.string().trim().min(1).optional(),
-  label: z.enum(["EASY", "HARD", "DISPUTED_INCORRECT"]),
+  label: z.enum(["EASY", "HARD", "DISPUTED_INCORRECT", "IRRELEVANT"]),
   comment: z.string().trim().max(500).optional()
 });
 
@@ -29,7 +29,7 @@ function toValidationErrorMessage(error: z.ZodError): string {
     return "Keep your note under 500 characters.";
   }
 
-  return "Choose Easy, Hard, or Incorrect question.";
+  return "Choose Easy, Hard, Incorrect question, or Irrelevant.";
 }
 
 export async function POST(request: Request) {

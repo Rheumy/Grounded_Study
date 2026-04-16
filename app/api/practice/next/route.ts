@@ -17,7 +17,7 @@ type PracticeQuestionDto = {
   difficulty: number;
   tagsJson: unknown;
   userFeedback: {
-    label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+    label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
     comment: string | null;
   } | null;
 };
@@ -96,7 +96,7 @@ function toPracticeQuestionDto(question: {
   difficulty: number;
   tagsJson: unknown;
   questionFeedbacks: Array<{
-    label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+    label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
     comment: string | null;
   }>;
 }): PracticeQuestionDto {
@@ -110,6 +110,19 @@ function toPracticeQuestionDto(question: {
     difficulty: question.difficulty,
     tagsJson: question.tagsJson ?? null,
     userFeedback: latestFeedback
+  };
+}
+
+function buildHiddenQuestionFilter(userId: string): Prisma.QuestionWhereInput {
+  return {
+    questionFeedbacks: {
+      none: {
+        userId,
+        label: {
+          in: ["DISPUTED_INCORRECT", "IRRELEVANT"]
+        }
+      }
+    }
   };
 }
 
@@ -215,7 +228,7 @@ export async function GET(request: Request) {
         difficulty: number;
         tagsJson: unknown;
         questionFeedbacks: Array<{
-          label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+          label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
           comment: string | null;
         }>;
       }
@@ -226,7 +239,11 @@ export async function GET(request: Request) {
       where: {
         userId: user.id,
         dueAt: { lte: new Date() },
-        question: buildQuestionWhere([...baseFilters, ...sessionExclusionFilters])
+        question: buildQuestionWhere([
+          ...baseFilters,
+          ...sessionExclusionFilters,
+          buildHiddenQuestionFilter(user.id)
+        ])
       },
       select: { question: { select: practiceQuestionSelect } },
       orderBy: { dueAt: "asc" },
@@ -239,6 +256,7 @@ export async function GET(request: Request) {
       where: buildQuestionWhere([
         ...baseFilters,
         ...sessionExclusionFilters,
+        buildHiddenQuestionFilter(user.id),
         buildIncorrectQuestionFilter(user.id)
       ]),
       select: practiceQuestionSelect,
@@ -248,14 +266,18 @@ export async function GET(request: Request) {
     question = pickRandomQuestion(candidates);
   } else if (recycleMode === "ALL") {
     let candidates = await prisma.question.findMany({
-      where: buildQuestionWhere([...baseFilters, ...sessionExclusionFilters]),
+      where: buildQuestionWhere([
+        ...baseFilters,
+        ...sessionExclusionFilters,
+        buildHiddenQuestionFilter(user.id)
+      ]),
       select: practiceQuestionSelect,
       take: 200
     });
 
     if (candidates.length === 0 && sessionExclusionFilters.length > 0) {
       candidates = await prisma.question.findMany({
-        where: buildQuestionWhere(baseFilters),
+        where: buildQuestionWhere([...baseFilters, buildHiddenQuestionFilter(user.id)]),
         select: practiceQuestionSelect,
         take: 200
       });
@@ -267,6 +289,7 @@ export async function GET(request: Request) {
       where: buildQuestionWhere([
         ...baseFilters,
         ...sessionExclusionFilters,
+        buildHiddenQuestionFilter(user.id),
         {
           NOT: buildAttemptedQuestionFilter(user.id)
         }

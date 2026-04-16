@@ -8,7 +8,7 @@ import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/f
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
-type QuestionFeedbackLabel = "EASY" | "HARD" | "DISPUTED_INCORRECT";
+type QuestionFeedbackLabel = "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
 
 type QuestionFeedback = {
   label: QuestionFeedbackLabel;
@@ -76,14 +76,32 @@ const recycleModeDescriptions: Record<RecycleMode, string> = {
 const questionFeedbackOptions: { label: string; value: QuestionFeedbackLabel }[] = [
   { label: "Easy", value: "EASY" },
   { label: "Hard", value: "HARD" },
-  { label: "Incorrect question", value: "DISPUTED_INCORRECT" }
+  { label: "Incorrect question", value: "DISPUTED_INCORRECT" },
+  { label: "Irrelevant", value: "IRRELEVANT" }
 ];
 
 function getQuestionFeedbackLabel(label: QuestionFeedbackLabel | null): string | null {
   if (label === "EASY") return "Easy";
   if (label === "HARD") return "Hard";
   if (label === "DISPUTED_INCORRECT") return "Incorrect question";
+  if (label === "IRRELEVANT") return "Irrelevant";
   return null;
+}
+
+function requiresFeedbackComment(label: QuestionFeedbackLabel): boolean {
+  return label === "DISPUTED_INCORRECT" || label === "IRRELEVANT";
+}
+
+function getFeedbackCommentPrompt(label: QuestionFeedbackLabel | null): string {
+  if (label === "DISPUTED_INCORRECT") {
+    return "Briefly tell us what seems wrong with this question or answer.";
+  }
+
+  if (label === "IRRELEVANT") {
+    return "Briefly tell us why this question was not useful or relevant.";
+  }
+
+  return "";
 }
 
 export function PracticeClient() {
@@ -104,6 +122,8 @@ export function PracticeClient() {
   const [questionFeedbackStatus, setQuestionFeedbackStatus] = useState<string | null>(null);
   const [questionFeedbackAttemptId, setQuestionFeedbackAttemptId] = useState<string | null>(null);
   const [isSavingQuestionFeedback, setIsSavingQuestionFeedback] = useState(false);
+  const [pendingFeedbackLabel, setPendingFeedbackLabel] = useState<QuestionFeedbackLabel | null>(null);
+  const [questionFeedbackComment, setQuestionFeedbackComment] = useState("");
 
   const currentQuestionNumber = results.length + (question ? 1 : 0);
   const isShortAnswer = question?.type === "SHORT_ANSWER";
@@ -131,6 +151,8 @@ export function PracticeClient() {
     setQuestionFeedback(null);
     setQuestionFeedbackStatus(null);
     setQuestionFeedbackAttemptId(null);
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment("");
 
     const params = new URLSearchParams({
       questionType: sessionConfig.questionType,
@@ -147,6 +169,8 @@ export function PracticeClient() {
       setStatus(body.error ?? "Unable to load a practice question.");
       setQuestionFeedback(null);
       setQuestionFeedbackAttemptId(null);
+      setPendingFeedbackLabel(null);
+      setQuestionFeedbackComment("");
       setView(nextViewIfEmpty);
       return;
     }
@@ -156,6 +180,8 @@ export function PracticeClient() {
     setStartTime(Date.now());
     setQuestionFeedback(body.question?.userFeedback ?? null);
     setQuestionFeedbackAttemptId(null);
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment("");
 
     if (body.question?.id) {
       setServedQuestionIds((prev) =>
@@ -175,6 +201,8 @@ export function PracticeClient() {
     setQuestionFeedback(null);
     setQuestionFeedbackStatus(null);
     setQuestionFeedbackAttemptId(null);
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment("");
     setView("active");
     await loadQuestion([], "setup");
   };
@@ -191,6 +219,8 @@ export function PracticeClient() {
     setQuestionFeedback(null);
     setQuestionFeedbackStatus(null);
     setQuestionFeedbackAttemptId(null);
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment("");
   };
 
   const endSession = () => {
@@ -232,6 +262,8 @@ export function PracticeClient() {
     setQuestionFeedback(body.userFeedback ?? submittedQuestion.userFeedback ?? null);
     setQuestionFeedbackAttemptId(body.attemptId ?? null);
     setQuestionFeedbackStatus(null);
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment(body.userFeedback?.comment ?? submittedQuestion.userFeedback?.comment ?? "");
   };
 
   const moveToNextQuestion = async () => {
@@ -246,7 +278,7 @@ export function PracticeClient() {
     await loadQuestion(servedQuestionIds, "summary");
   };
 
-  const saveQuestionFeedback = async (label: QuestionFeedbackLabel) => {
+  const saveQuestionFeedback = async (label: QuestionFeedbackLabel, comment?: string) => {
     if (!question || !feedback) return;
 
     setIsSavingQuestionFeedback(true);
@@ -258,7 +290,8 @@ export function PracticeClient() {
       body: JSON.stringify({
         questionId: question.id,
         attemptId: questionFeedbackAttemptId ?? feedback.attemptId,
-        label
+        label,
+        comment
       })
     });
 
@@ -274,7 +307,28 @@ export function PracticeClient() {
     setQuestionFeedbackStatus(
       `Saved as ${getQuestionFeedbackLabel(body.feedback?.label ?? label) ?? "feedback"}.`
     );
+    setPendingFeedbackLabel(null);
+    setQuestionFeedbackComment(body.feedback?.comment ?? comment ?? "");
     setIsSavingQuestionFeedback(false);
+  };
+
+  const startQuestionFeedback = (label: QuestionFeedbackLabel) => {
+    setQuestionFeedbackStatus(null);
+
+    if (requiresFeedbackComment(label)) {
+      setPendingFeedbackLabel(label);
+      setQuestionFeedbackComment(
+        questionFeedback?.label === label ? (questionFeedback.comment ?? "") : ""
+      );
+      return;
+    }
+
+    void saveQuestionFeedback(label);
+  };
+
+  const submitQuestionFeedbackWithComment = () => {
+    if (!pendingFeedbackLabel) return;
+    void saveQuestionFeedback(pendingFeedbackLabel, questionFeedbackComment);
   };
 
   const totalAnswered = results.length;
@@ -487,7 +541,8 @@ export function PracticeClient() {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-ink">How was this question?</p>
                       <p className="text-xs text-ink/60">
-                        “Incorrect question” means the question or answer seems wrong.
+                        “Incorrect question” means the question or answer seems wrong. “Irrelevant”
+                        means it was not useful for your exam or study goal.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -497,13 +552,54 @@ export function PracticeClient() {
                           type="button"
                           size="sm"
                           variant={questionFeedback?.label === option.value ? "default" : "outline"}
-                          onClick={() => saveQuestionFeedback(option.value)}
+                          onClick={() => startQuestionFeedback(option.value)}
                           disabled={isSavingQuestionFeedback}
                         >
                           {option.label}
                         </Button>
                       ))}
                     </div>
+                    {pendingFeedbackLabel ? (
+                      <div className="space-y-3 rounded-lg border border-ink/10 bg-white p-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-ink">
+                            {getQuestionFeedbackLabel(pendingFeedbackLabel)}
+                          </p>
+                          <p className="text-xs text-ink/60">
+                            {getFeedbackCommentPrompt(pendingFeedbackLabel)}
+                          </p>
+                        </div>
+                        <Textarea
+                          value={questionFeedbackComment}
+                          onChange={(event) => setQuestionFeedbackComment(event.target.value)}
+                          placeholder="Optional comment"
+                          disabled={isSavingQuestionFeedback}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={submitQuestionFeedbackWithComment}
+                            disabled={isSavingQuestionFeedback}
+                          >
+                            Submit feedback
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setPendingFeedbackLabel(null);
+                              setQuestionFeedbackComment("");
+                              setQuestionFeedbackStatus(null);
+                            }}
+                            disabled={isSavingQuestionFeedback}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     {questionFeedbackStatus ? (
                       <p className="text-xs text-ink/60">{questionFeedbackStatus}</p>
                     ) : questionFeedback ? (
