@@ -8,6 +8,12 @@ import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/f
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
+type QuestionFeedbackLabel = "EASY" | "HARD" | "DISPUTED_INCORRECT";
+
+type QuestionFeedback = {
+  label: QuestionFeedbackLabel;
+  comment: string | null;
+};
 
 type Question = {
   id: string;
@@ -15,6 +21,7 @@ type Question = {
   type: QuestionType;
   optionsJson?: string[] | null;
   tagsJson?: unknown;
+  userFeedback: QuestionFeedback | null;
 };
 
 type FeedbackCitation = {
@@ -23,12 +30,14 @@ type FeedbackCitation = {
 };
 
 type Feedback = {
+  attemptId: string;
   correct: boolean;
   needsReview: boolean;
   reviewStatus: ShortAnswerReviewStatus | null;
   correctAnswer: string;
   rationale: string;
   citations: FeedbackCitation[];
+  userFeedback: QuestionFeedback | null;
 };
 
 type PracticeSessionConfig = {
@@ -58,11 +67,24 @@ function parseTags(value: unknown): string[] {
 }
 
 const recycleModeDescriptions: Record<RecycleMode, string> = {
-  NONE: "Stay with fresh questions you have not already answered correctly in practice.",
+  NONE: "Stay with questions you have never answered before in practice or a mock exam.",
   DUE: "Mix in questions that are scheduled to come back for revision.",
-  INCORRECT: "Revisit questions you previously got wrong in practice.",
+  INCORRECT: "Revisit questions you previously got wrong in practice or a mock exam.",
   ALL: "Use the full question pool, including fresh questions and ones you have seen before."
 };
+
+const questionFeedbackOptions: { label: string; value: QuestionFeedbackLabel }[] = [
+  { label: "Easy", value: "EASY" },
+  { label: "Hard", value: "HARD" },
+  { label: "Incorrect question", value: "DISPUTED_INCORRECT" }
+];
+
+function getQuestionFeedbackLabel(label: QuestionFeedbackLabel | null): string | null {
+  if (label === "EASY") return "Easy";
+  if (label === "HARD") return "Hard";
+  if (label === "DISPUTED_INCORRECT") return "Incorrect question";
+  return null;
+}
 
 export function PracticeClient() {
   const [view, setView] = useState<"setup" | "active" | "summary">("setup");
@@ -77,6 +99,11 @@ export function PracticeClient() {
   const [results, setResults] = useState<AnsweredQuestion[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [startTime, setStartTime] = useState<number>(Date.now());
+  const [servedQuestionIds, setServedQuestionIds] = useState<string[]>([]);
+  const [questionFeedback, setQuestionFeedback] = useState<QuestionFeedback | null>(null);
+  const [questionFeedbackStatus, setQuestionFeedbackStatus] = useState<string | null>(null);
+  const [questionFeedbackAttemptId, setQuestionFeedbackAttemptId] = useState<string | null>(null);
+  const [isSavingQuestionFeedback, setIsSavingQuestionFeedback] = useState(false);
 
   const currentQuestionNumber = results.length + (question ? 1 : 0);
   const isShortAnswer = question?.type === "SHORT_ANSWER";
@@ -101,6 +128,9 @@ export function PracticeClient() {
     setStatus("Loading question...");
     setFeedback(null);
     setAnswer("");
+    setQuestionFeedback(null);
+    setQuestionFeedbackStatus(null);
+    setQuestionFeedbackAttemptId(null);
 
     const params = new URLSearchParams({
       questionType: sessionConfig.questionType,
@@ -115,6 +145,8 @@ export function PracticeClient() {
     if (!response.ok) {
       setQuestion(null);
       setStatus(body.error ?? "Unable to load a practice question.");
+      setQuestionFeedback(null);
+      setQuestionFeedbackAttemptId(null);
       setView(nextViewIfEmpty);
       return;
     }
@@ -122,6 +154,14 @@ export function PracticeClient() {
     setQuestion(body.question ?? null);
     setStatus(body.question ? null : body.message ?? "No questions available");
     setStartTime(Date.now());
+    setQuestionFeedback(body.question?.userFeedback ?? null);
+    setQuestionFeedbackAttemptId(null);
+
+    if (body.question?.id) {
+      setServedQuestionIds((prev) =>
+        prev.includes(body.question.id) ? prev : [...prev, body.question.id]
+      );
+    }
 
     if (!body.question) {
       setView(nextViewIfEmpty);
@@ -131,6 +171,10 @@ export function PracticeClient() {
   const startSession = async () => {
     setResults([]);
     setStatus(null);
+    setServedQuestionIds([]);
+    setQuestionFeedback(null);
+    setQuestionFeedbackStatus(null);
+    setQuestionFeedbackAttemptId(null);
     setView("active");
     await loadQuestion([], "setup");
   };
@@ -143,6 +187,10 @@ export function PracticeClient() {
     setResults([]);
     setStatus(null);
     setStartTime(Date.now());
+    setServedQuestionIds([]);
+    setQuestionFeedback(null);
+    setQuestionFeedbackStatus(null);
+    setQuestionFeedbackAttemptId(null);
   };
 
   const endSession = () => {
@@ -181,12 +229,13 @@ export function PracticeClient() {
         feedback: body
       }
     ]);
+    setQuestionFeedback(body.userFeedback ?? submittedQuestion.userFeedback ?? null);
+    setQuestionFeedbackAttemptId(body.attemptId ?? null);
+    setQuestionFeedbackStatus(null);
   };
 
   const moveToNextQuestion = async () => {
-    const answeredQuestionIds = results.map((item) => item.question.id);
-
-    if (answeredQuestionIds.length >= sessionConfig.sessionLength) {
+    if (results.length >= sessionConfig.sessionLength) {
       setQuestion(null);
       setAnswer("");
       setFeedback(null);
@@ -194,7 +243,38 @@ export function PracticeClient() {
       return;
     }
 
-    await loadQuestion(answeredQuestionIds, "summary");
+    await loadQuestion(servedQuestionIds, "summary");
+  };
+
+  const saveQuestionFeedback = async (label: QuestionFeedbackLabel) => {
+    if (!question || !feedback) return;
+
+    setIsSavingQuestionFeedback(true);
+    setQuestionFeedbackStatus("Saving your feedback...");
+
+    const response = await fetch("/api/practice/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        questionId: question.id,
+        attemptId: questionFeedbackAttemptId ?? feedback.attemptId,
+        label
+      })
+    });
+
+    const body = await response.json();
+
+    if (!response.ok) {
+      setQuestionFeedbackStatus(body.error ?? "Unable to save your feedback right now.");
+      setIsSavingQuestionFeedback(false);
+      return;
+    }
+
+    setQuestionFeedback(body.feedback ?? { label, comment: null });
+    setQuestionFeedbackStatus(
+      `Saved as ${getQuestionFeedbackLabel(body.feedback?.label ?? label) ?? "feedback"}.`
+    );
+    setIsSavingQuestionFeedback(false);
   };
 
   const totalAnswered = results.length;
@@ -402,6 +482,35 @@ export function PracticeClient() {
                     ) : (
                       <p className="text-xs text-ink/50">No supporting citation available.</p>
                     )}
+                  </div>
+                  <div className="mt-5 space-y-3 rounded-xl border border-ink/10 bg-ink/[0.02] p-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-ink">How was this question?</p>
+                      <p className="text-xs text-ink/60">
+                        “Incorrect question” means the question or answer seems wrong.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {questionFeedbackOptions.map((option) => (
+                        <Button
+                          key={option.value}
+                          type="button"
+                          size="sm"
+                          variant={questionFeedback?.label === option.value ? "default" : "outline"}
+                          onClick={() => saveQuestionFeedback(option.value)}
+                          disabled={isSavingQuestionFeedback}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                    {questionFeedbackStatus ? (
+                      <p className="text-xs text-ink/60">{questionFeedbackStatus}</p>
+                    ) : questionFeedback ? (
+                      <p className="text-xs text-ink/60">
+                        Saved as {getQuestionFeedbackLabel(questionFeedback.label) ?? "feedback"}.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button onClick={moveToNextQuestion}>

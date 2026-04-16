@@ -16,34 +16,11 @@ type PracticeQuestionDto = {
   optionsJson: string[] | null;
   difficulty: number;
   tagsJson: unknown;
+  userFeedback: {
+    label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+    comment: string | null;
+  } | null;
 };
-
-const practiceQuestionSelect = {
-  id: true,
-  stem: true,
-  type: true,
-  optionsJson: true,
-  difficulty: true,
-  tagsJson: true
-} satisfies Prisma.QuestionSelect;
-
-function toPracticeQuestionDto(question: {
-  id: string;
-  stem: string;
-  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
-  optionsJson: unknown;
-  difficulty: number;
-  tagsJson: unknown;
-}): PracticeQuestionDto {
-  return {
-    id: question.id,
-    stem: question.stem,
-    type: question.type,
-    optionsJson: Array.isArray(question.optionsJson) ? (question.optionsJson as string[]) : null,
-    difficulty: question.difficulty,
-    tagsJson: question.tagsJson ?? null
-  };
-}
 
 function parseQuestionType(value: string | null): QuestionTypeFilter {
   if (value && QUESTION_TYPES.includes(value as (typeof QUESTION_TYPES)[number])) {
@@ -81,14 +58,123 @@ function buildEmptyMessage(questionType: QuestionTypeFilter, recycleMode: Recycl
   }
 
   if (recycleMode === "INCORRECT") {
-    return `No previously incorrect ${typeLabel} questions are available right now.`;
+    return `You have no prior incorrect ${typeLabel} questions available for this selection right now.`;
   }
 
   if (recycleMode === "ALL") {
     return `No ${typeLabel} questions are available right now.`;
   }
 
-  return `No ${typeLabel} practice questions are available right now.`;
+  return "You have no new questions available for this selection. Generate more questions or switch to All questions.";
+}
+
+function buildPracticeQuestionSelect(userId: string) {
+  return {
+    id: true,
+    stem: true,
+    type: true,
+    optionsJson: true,
+    difficulty: true,
+    tagsJson: true,
+    questionFeedbacks: {
+      where: { userId },
+      take: 1,
+      orderBy: { updatedAt: "desc" },
+      select: {
+        label: true,
+        comment: true
+      }
+    }
+  } satisfies Prisma.QuestionSelect;
+}
+
+function toPracticeQuestionDto(question: {
+  id: string;
+  stem: string;
+  type: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+  optionsJson: unknown;
+  difficulty: number;
+  tagsJson: unknown;
+  questionFeedbacks: Array<{
+    label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+    comment: string | null;
+  }>;
+}): PracticeQuestionDto {
+  const latestFeedback = question.questionFeedbacks[0] ?? null;
+
+  return {
+    id: question.id,
+    stem: question.stem,
+    type: question.type,
+    optionsJson: Array.isArray(question.optionsJson) ? (question.optionsJson as string[]) : null,
+    difficulty: question.difficulty,
+    tagsJson: question.tagsJson ?? null,
+    userFeedback: latestFeedback
+  };
+}
+
+function buildAttemptedQuestionFilter(userId: string): Prisma.QuestionWhereInput {
+  return {
+    OR: [
+      {
+        practiceAttempts: {
+          some: {
+            userId
+          }
+        }
+      },
+      {
+        examSessionQuestions: {
+          some: {
+            session: {
+              userId
+            },
+            selectedAnswer: {
+              not: null
+            }
+          }
+        }
+      }
+    ]
+  };
+}
+
+function buildIncorrectQuestionFilter(userId: string): Prisma.QuestionWhereInput {
+  return {
+    OR: [
+      {
+        practiceAttempts: {
+          some: {
+            userId,
+            correct: false
+          }
+        }
+      },
+      {
+        examSessionQuestions: {
+          some: {
+            session: {
+              userId
+            },
+            selectedAnswer: {
+              not: null
+            },
+            correct: false
+          }
+        }
+      }
+    ]
+  };
+}
+
+function buildQuestionWhere(filters: Prisma.QuestionWhereInput[]): Prisma.QuestionWhereInput {
+  if (filters.length === 1) {
+    return filters[0] ?? {};
+  }
+
+  return {
+    AND: filters
+  };
 }
 
 export async function GET(request: Request) {
@@ -101,13 +187,24 @@ export async function GET(request: Request) {
   const questionType = parseQuestionType(searchParams.get("questionType"));
   const recycleMode = parseRecycleMode(searchParams.get("recycleMode"));
   const excludeQuestionIds = searchParams.getAll("excludeQuestionId").filter(Boolean);
-
-  const baseQuestionWhere: Prisma.QuestionWhereInput = {
-    ownerId: user.id,
-    verifierStatus: "PASSED",
-    ...(questionType !== "ALL" ? { type: questionType } : {}),
-    ...(excludeQuestionIds.length > 0 ? { id: { notIn: excludeQuestionIds } } : {})
-  };
+  const practiceQuestionSelect = buildPracticeQuestionSelect(user.id);
+  const baseFilters: Prisma.QuestionWhereInput[] = [
+    {
+      ownerId: user.id,
+      verifierStatus: "PASSED",
+      ...(questionType !== "ALL" ? { type: questionType } : {})
+    }
+  ];
+  const sessionExclusionFilters =
+    excludeQuestionIds.length > 0
+      ? [
+          {
+            id: {
+              notIn: excludeQuestionIds
+            }
+          } satisfies Prisma.QuestionWhereInput
+        ]
+      : [];
 
   let question:
     | {
@@ -117,6 +214,10 @@ export async function GET(request: Request) {
         optionsJson: unknown;
         difficulty: number;
         tagsJson: unknown;
+        questionFeedbacks: Array<{
+          label: "EASY" | "HARD" | "DISPUTED_INCORRECT";
+          comment: string | null;
+        }>;
       }
     | null = null;
 
@@ -125,7 +226,7 @@ export async function GET(request: Request) {
       where: {
         userId: user.id,
         dueAt: { lte: new Date() },
-        question: baseQuestionWhere
+        question: buildQuestionWhere([...baseFilters, ...sessionExclusionFilters])
       },
       select: { question: { select: practiceQuestionSelect } },
       orderBy: { dueAt: "asc" },
@@ -135,39 +236,41 @@ export async function GET(request: Request) {
     question = pickRandomQuestion(due.map((item) => item.question));
   } else if (recycleMode === "INCORRECT") {
     const candidates = await prisma.question.findMany({
-      where: {
-        ...baseQuestionWhere,
-        practiceAttempts: {
-          some: {
-            userId: user.id,
-            correct: false
-          }
-        }
-      },
+      where: buildQuestionWhere([
+        ...baseFilters,
+        ...sessionExclusionFilters,
+        buildIncorrectQuestionFilter(user.id)
+      ]),
       select: practiceQuestionSelect,
       take: 200
     });
 
     question = pickRandomQuestion(candidates);
   } else if (recycleMode === "ALL") {
-    const candidates = await prisma.question.findMany({
-      where: baseQuestionWhere,
+    let candidates = await prisma.question.findMany({
+      where: buildQuestionWhere([...baseFilters, ...sessionExclusionFilters]),
       select: practiceQuestionSelect,
       take: 200
     });
 
+    if (candidates.length === 0 && sessionExclusionFilters.length > 0) {
+      candidates = await prisma.question.findMany({
+        where: buildQuestionWhere(baseFilters),
+        select: practiceQuestionSelect,
+        take: 200
+      });
+    }
+
     question = pickRandomQuestion(candidates);
   } else {
     const candidates = await prisma.question.findMany({
-      where: {
-        ...baseQuestionWhere,
-        practiceAttempts: {
-          none: {
-            userId: user.id,
-            correct: true
-          }
+      where: buildQuestionWhere([
+        ...baseFilters,
+        ...sessionExclusionFilters,
+        {
+          NOT: buildAttemptedQuestionFilter(user.id)
         }
-      },
+      ]),
       select: practiceQuestionSelect,
       take: 200
     });

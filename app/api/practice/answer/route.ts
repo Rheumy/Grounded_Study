@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     }
   }
 
-  await prisma.practiceAttempt.create({
+  const attempt = await prisma.practiceAttempt.create({
     data: {
       userId: user.id,
       questionId: question.id,
@@ -77,6 +77,19 @@ export async function POST(request: Request) {
 
   await updateSchedule({ userId: user.id, questionId: question.id, correct });
 
+  const userFeedback = await prisma.questionFeedback.findUnique({
+    where: {
+      userId_questionId: {
+        userId: user.id,
+        questionId: question.id
+      }
+    },
+    select: {
+      label: true,
+      comment: true
+    }
+  });
+
   const reviewStatus = getShortAnswerReviewStatus({
     questionType: question.type,
     hasAnswer,
@@ -85,6 +98,7 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({
+    attemptId: attempt.id,
     correct,
     needsReview,
     reviewStatus,
@@ -96,6 +110,7 @@ export async function POST(request: Request) {
       correct,
       needsReview
     }),
-    citations: formatFeedbackCitations(question.citationsJson)
+    citations: formatFeedbackCitations(question.citationsJson),
+    userFeedback
   });
 }

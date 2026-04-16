@@ -56,6 +56,12 @@ enum VerifierStatus {
   INSUFFICIENT_EVIDENCE
 }
 
+enum QuestionFeedbackLabel {
+  EASY
+  HARD
+  DISPUTED_INCORRECT
+}
+
 model User {
   id             String    @id @default(cuid())
   name           String?
@@ -77,6 +83,7 @@ model User {
   auditLogs      AuditLog[] @relation("ActorLogs")
   usageCounters  UsageCounter[]
   aiUsageEvents  AiUsageEvent[]
+  questionFeedbacks QuestionFeedback[]
 }
 
 model Account {
@@ -222,6 +229,7 @@ model Question {
   examSessionQuestions ExamSessionQuestion[]
   spacedRepetitionSchedules SpacedRepetitionSchedule[]
   aiUsageEvents AiUsageEvent[]
+  questionFeedbacks QuestionFeedback[]
 
   @@index([ownerId])
   @@index([difficulty])
@@ -241,6 +249,24 @@ model PracticeAttempt {
 
   @@index([userId])
   @@index([questionId])
+}
+
+model QuestionFeedback {
+  id         String                @id @default(cuid())
+  userId     String
+  questionId String
+  attemptId  String?
+  label      QuestionFeedbackLabel
+  comment    String?
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([attemptId])
 }
 
 model ExamSession {
