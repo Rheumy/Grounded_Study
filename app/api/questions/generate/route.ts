@@ -7,6 +7,7 @@ import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
 export async function POST(request: Request) {
+  const requestStartedAt = Date.now();
   const user = await requireUserApi();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,6 +17,14 @@ export async function POST(request: Request) {
   const documentIds: string[] = body.documentIds ?? [];
   const styleProfileId: string | null = body.styleProfileId ?? null;
   const difficulty = Math.min(5, Math.max(1, Number(body.difficulty ?? 3)));
+  logger.info(
+    {
+      userId: user.id
+    },
+    "Generate questions request received"
+  );
+
+  const quotaCheckStartedAt = Date.now();
   const generationCaps = await resolveUserGenerationCaps(user.id);
   const requestedCount = Math.round(Number(body.count ?? 5));
 
@@ -78,6 +87,14 @@ export async function POST(request: Request) {
 
   try {
     await enforceQuestionLimit(user.id, count);
+    logger.info(
+      {
+        userId: user.id,
+        requestedCount: count,
+        durationMs: Date.now() - quotaCheckStartedAt
+      },
+      "Generate questions quota check completed"
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Question limit reached";
     return NextResponse.json({ error: message }, { status: 400 });
@@ -120,7 +137,8 @@ export async function POST(request: Request) {
         requestedCount: count,
         passedCount: passed,
         insufficientEvidenceCount: insufficientEvidence,
-        typeMix
+        typeMix,
+        durationMs: Date.now() - requestStartedAt
       },
       "Generate questions request completed"
     );
@@ -142,7 +160,8 @@ export async function POST(request: Request) {
         difficulty,
         requestedCount: count,
         typeMix,
-        message
+        message,
+        durationMs: Date.now() - requestStartedAt
       },
       "Generation failed"
     );

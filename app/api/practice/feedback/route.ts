@@ -3,12 +3,19 @@ import { z } from "zod";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 
+const QUESTION_STYLE_PROMPT_THRESHOLD = 3;
+const HIDING_FEEDBACK_LABELS = ["DISPUTED_INCORRECT", "IRRELEVANT"] as const;
+
 const PracticeFeedbackSchema = z.object({
   questionId: z.string().trim().min(1),
   attemptId: z.string().trim().min(1).optional(),
-  label: z.enum(["EASY", "HARD", "DISPUTED_INCORRECT", "IRRELEVANT"]),
+  label: z.enum(["EASY", "HARD", "GOOD_QUESTION", "DISPUTED_INCORRECT", "IRRELEVANT"]),
   comment: z.string().trim().max(500).optional()
 });
+
+function isHidingFeedbackLabel(label: z.infer<typeof PracticeFeedbackSchema>["label"]): boolean {
+  return HIDING_FEEDBACK_LABELS.includes(label as (typeof HIDING_FEEDBACK_LABELS)[number]);
+}
 
 function toValidationErrorMessage(error: z.ZodError): string {
   const issue = error.issues[0];
@@ -29,7 +36,7 @@ function toValidationErrorMessage(error: z.ZodError): string {
     return "Keep your note under 500 characters.";
   }
 
-  return "Choose Easy, Hard, Incorrect question, or Irrelevant.";
+  return "Choose Easy, Hard, Good question, Incorrect question, or Irrelevant.";
 }
 
 export async function POST(request: Request) {
@@ -46,6 +53,17 @@ export async function POST(request: Request) {
   }
 
   const comment = parsed.data.comment?.trim() ? parsed.data.comment.trim() : null;
+  const existingFeedback = await prisma.questionFeedback.findUnique({
+    where: {
+      userId_questionId: {
+        userId: user.id,
+        questionId: parsed.data.questionId
+      }
+    },
+    select: {
+      label: true
+    }
+  });
 
   const question = await prisma.question.findUnique({
     where: { id: parsed.data.questionId },
@@ -72,34 +90,54 @@ export async function POST(request: Request) {
   }
 
   try {
-    const feedback = await prisma.questionFeedback.upsert({
-      where: {
-        userId_questionId: {
+    const [feedback, flaggedFeedbackCount] = await prisma.$transaction([
+      prisma.questionFeedback.upsert({
+        where: {
+          userId_questionId: {
+            userId: user.id,
+            questionId: question.id
+          }
+        },
+        update: {
+          label: parsed.data.label,
+          comment,
+          ...(parsed.data.attemptId ? { attemptId: parsed.data.attemptId } : {})
+        },
+        create: {
           userId: user.id,
-          questionId: question.id
+          questionId: question.id,
+          attemptId: parsed.data.attemptId,
+          label: parsed.data.label,
+          comment
+        },
+        select: {
+          label: true,
+          comment: true,
+          updatedAt: true
         }
-      },
-      update: {
-        label: parsed.data.label,
-        comment,
-        ...(parsed.data.attemptId ? { attemptId: parsed.data.attemptId } : {})
-      },
-      create: {
-        userId: user.id,
-        questionId: question.id,
-        attemptId: parsed.data.attemptId,
-        label: parsed.data.label,
-        comment
-      },
-      select: {
-        label: true,
-        comment: true,
-        updatedAt: true
-      }
-    });
+      }),
+      prisma.questionFeedback.count({
+        where: {
+          userId: user.id,
+          label: {
+            in: [...HIDING_FEEDBACK_LABELS]
+          }
+        }
+      })
+    ]);
+    const hidesQuestionFromFuture = isHidingFeedbackLabel(parsed.data.label);
+    const shouldShowQuestionStylePrompt =
+      hidesQuestionFromFuture &&
+      flaggedFeedbackCount >= QUESTION_STYLE_PROMPT_THRESHOLD &&
+      !isHidingFeedbackLabel(existingFeedback?.label ?? "EASY");
 
     return NextResponse.json({
-      feedback
+      feedback,
+      hidesQuestionFromFuture,
+      shouldShowQuestionStylePrompt,
+      message: hidesQuestionFromFuture
+        ? "Thanks — we’ll stop showing this question to you."
+        : undefined
     });
   } catch (_error) {
     return NextResponse.json(

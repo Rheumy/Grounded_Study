@@ -17,7 +17,7 @@ type PracticeQuestionDto = {
   difficulty: number;
   tagsJson: unknown;
   userFeedback: {
-    label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+    label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
     comment: string | null;
   } | null;
 };
@@ -96,7 +96,7 @@ function toPracticeQuestionDto(question: {
   difficulty: number;
   tagsJson: unknown;
   questionFeedbacks: Array<{
-    label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+    label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
     comment: string | null;
   }>;
 }): PracticeQuestionDto {
@@ -228,7 +228,7 @@ export async function GET(request: Request) {
         difficulty: number;
         tagsJson: unknown;
         questionFeedbacks: Array<{
-          label: "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+          label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
           comment: string | null;
         }>;
       }

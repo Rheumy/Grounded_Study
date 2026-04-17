@@ -59,6 +59,7 @@ enum VerifierStatus {
 enum QuestionFeedbackLabel {
   EASY
   HARD
+  GOOD_QUESTION
   DISPUTED_INCORRECT
   IRRELEVANT
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
@@ -8,7 +9,12 @@ import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/f
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
-type QuestionFeedbackLabel = "EASY" | "HARD" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+type QuestionFeedbackLabel =
+  | "EASY"
+  | "HARD"
+  | "GOOD_QUESTION"
+  | "DISPUTED_INCORRECT"
+  | "IRRELEVANT";
 
 type QuestionFeedback = {
   label: QuestionFeedbackLabel;
@@ -39,6 +45,8 @@ type Feedback = {
   citations: FeedbackCitation[];
   userFeedback: QuestionFeedback | null;
 };
+
+const PERSISTED_NEW_QUESTION_IDS_KEY = "grounded-study:practice:new-question-ids";
 
 type PracticeSessionConfig = {
   questionType: QuestionTypeFilter;
@@ -76,6 +84,7 @@ const recycleModeDescriptions: Record<RecycleMode, string> = {
 const questionFeedbackOptions: { label: string; value: QuestionFeedbackLabel }[] = [
   { label: "Easy", value: "EASY" },
   { label: "Hard", value: "HARD" },
+  { label: "Good question", value: "GOOD_QUESTION" },
   { label: "Incorrect question", value: "DISPUTED_INCORRECT" },
   { label: "Irrelevant", value: "IRRELEVANT" }
 ];
@@ -83,6 +92,7 @@ const questionFeedbackOptions: { label: string; value: QuestionFeedbackLabel }[]
 function getQuestionFeedbackLabel(label: QuestionFeedbackLabel | null): string | null {
   if (label === "EASY") return "Easy";
   if (label === "HARD") return "Hard";
+  if (label === "GOOD_QUESTION") return "Good question";
   if (label === "DISPUTED_INCORRECT") return "Incorrect question";
   if (label === "IRRELEVANT") return "Irrelevant";
   return null;
@@ -102,6 +112,35 @@ function getFeedbackCommentPrompt(label: QuestionFeedbackLabel | null): string {
   }
 
   return "";
+}
+
+function loadPersistedNewQuestionIds(): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(PERSISTED_NEW_QUESTION_IDS_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function persistNewQuestionIds(questionIds: string[]) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      PERSISTED_NEW_QUESTION_IDS_KEY,
+      JSON.stringify(questionIds.slice(-500))
+    );
+  } catch {
+    // Ignore storage failures and fall back to in-memory session exclusions.
+  }
 }
 
 export function PracticeClient() {
@@ -124,6 +163,12 @@ export function PracticeClient() {
   const [isSavingQuestionFeedback, setIsSavingQuestionFeedback] = useState(false);
   const [pendingFeedbackLabel, setPendingFeedbackLabel] = useState<QuestionFeedbackLabel | null>(null);
   const [questionFeedbackComment, setQuestionFeedbackComment] = useState("");
+  const [persistedNewQuestionIds, setPersistedNewQuestionIds] = useState<string[]>([]);
+  const [showQuestionStylePrompt, setShowQuestionStylePrompt] = useState(false);
+
+  useEffect(() => {
+    setPersistedNewQuestionIds(loadPersistedNewQuestionIds());
+  }, []);
 
   const currentQuestionNumber = results.length + (question ? 1 : 0);
   const isShortAnswer = question?.type === "SHORT_ANSWER";
@@ -158,8 +203,12 @@ export function PracticeClient() {
       questionType: sessionConfig.questionType,
       recycleMode: sessionConfig.recycleMode
     });
+    const effectiveExcludeQuestionIds =
+      sessionConfig.recycleMode === "NONE"
+        ? Array.from(new Set([...persistedNewQuestionIds, ...excludeQuestionIds]))
+        : excludeQuestionIds;
 
-    excludeQuestionIds.forEach((questionId) => params.append("excludeQuestionId", questionId));
+    effectiveExcludeQuestionIds.forEach((questionId) => params.append("excludeQuestionId", questionId));
 
     const response = await fetch(`/api/practice/next?${params.toString()}`);
     const body = await response.json();
@@ -182,11 +231,19 @@ export function PracticeClient() {
     setQuestionFeedbackAttemptId(null);
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
+    setShowQuestionStylePrompt(false);
 
     if (body.question?.id) {
       setServedQuestionIds((prev) =>
         prev.includes(body.question.id) ? prev : [...prev, body.question.id]
       );
+      if (sessionConfig.recycleMode === "NONE") {
+        setPersistedNewQuestionIds((prev) => {
+          const next = prev.includes(body.question.id) ? prev : [...prev, body.question.id];
+          persistNewQuestionIds(next);
+          return next;
+        });
+      }
     }
 
     if (!body.question) {
@@ -203,6 +260,7 @@ export function PracticeClient() {
     setQuestionFeedbackAttemptId(null);
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
+    setShowQuestionStylePrompt(false);
     setView("active");
     await loadQuestion([], "setup");
   };
@@ -221,6 +279,7 @@ export function PracticeClient() {
     setQuestionFeedbackAttemptId(null);
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
+    setShowQuestionStylePrompt(false);
   };
 
   const endSession = () => {
@@ -264,6 +323,7 @@ export function PracticeClient() {
     setQuestionFeedbackStatus(null);
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment(body.userFeedback?.comment ?? submittedQuestion.userFeedback?.comment ?? "");
+    setShowQuestionStylePrompt(false);
   };
 
   const moveToNextQuestion = async () => {
@@ -305,10 +365,12 @@ export function PracticeClient() {
 
     setQuestionFeedback(body.feedback ?? { label, comment: null });
     setQuestionFeedbackStatus(
-      `Saved as ${getQuestionFeedbackLabel(body.feedback?.label ?? label) ?? "feedback"}.`
+      body.message ??
+        `Saved as ${getQuestionFeedbackLabel(body.feedback?.label ?? label) ?? "feedback"}.`
     );
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment(body.feedback?.comment ?? comment ?? "");
+    setShowQuestionStylePrompt(Boolean(body.shouldShowQuestionStylePrompt));
     setIsSavingQuestionFeedback(false);
   };
 
@@ -541,8 +603,8 @@ export function PracticeClient() {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-ink">How was this question?</p>
                       <p className="text-xs text-ink/60">
-                        “Incorrect question” means the question or answer seems wrong. “Irrelevant”
-                        means it was not useful for your exam or study goal.
+                        “Incorrect question” and “Irrelevant” hide the question from future
+                        practice and mock exams for you only. They do not delete it for everyone.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -606,6 +668,30 @@ export function PracticeClient() {
                       <p className="text-xs text-ink/60">
                         Saved as {getQuestionFeedbackLabel(questionFeedback.label) ?? "feedback"}.
                       </p>
+                    ) : null}
+                    {showQuestionStylePrompt ? (
+                      <div className="space-y-3 rounded-lg border border-ink/10 bg-white p-3">
+                        <p className="text-sm text-ink/75">
+                          We’re seeing a few questions that missed the mark. Add more guidance so
+                          future questions match your exam better.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href="/dashboard/style-profiles"
+                            className="inline-flex h-8 items-center justify-center rounded-md bg-accent px-3 text-sm font-medium text-white transition hover:bg-accent/90"
+                          >
+                            Update question style
+                          </Link>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowQuestionStylePrompt(false)}
+                          >
+                            Not now
+                          </Button>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">

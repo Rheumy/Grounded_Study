@@ -1,0 +1,1 @@
+ALTER TYPE "QuestionFeedbackLabel" ADD VALUE 'GOOD_QUESTION';

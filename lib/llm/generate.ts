@@ -11,6 +11,10 @@ const MAX_RETRIES = 3;
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
 
+function durationMs(startedAt: number): number {
+  return Date.now() - startedAt;
+}
+
 export type TypeMix = {
   MCQ?: number;
   SHORT_ANSWER?: number;
@@ -168,6 +172,16 @@ export async function generateQuestions(params: {
 
     for (let attempt = 0; attempt < MAX_RETRIES && !saved; attempt += 1) {
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
+        const retrievalStartedAt = Date.now();
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode
+          },
+          "Question retrieval started"
+        );
         currentQuery = await getRandomChunkSnippet(params.documentIds);
         currentChunks = await retrieveChunks({
           query: currentQuery,
@@ -175,6 +189,17 @@ export async function generateQuestions(params: {
           limit: 6,
           userId: params.ownerId
         });
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode,
+            chunkCount: currentChunks.length,
+            durationMs: durationMs(retrievalStartedAt)
+          },
+          "Question retrieval completed"
+        );
       }
 
       logger.info(
@@ -196,6 +221,17 @@ export async function generateQuestions(params: {
 
       let generated;
       try {
+        const generationStartedAt = Date.now();
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode,
+            chunkCount: currentChunks.length
+          },
+          "Question LLM generation started"
+        );
         generated = await generateQuestion({
           styleProfile: styleProfile?.schemaJson ?? {},
           difficulty: params.difficulty,
@@ -209,6 +245,16 @@ export async function generateQuestions(params: {
             styleProfileId: params.styleProfileId
           }
         });
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode,
+            durationMs: durationMs(generationStartedAt)
+          },
+          "Question LLM generation completed"
+        );
       } catch (genError) {
         // Log the raw error (e.g. Zod validation failure on LLM output) and retry
         logger.warn(
@@ -244,6 +290,16 @@ export async function generateQuestions(params: {
 
       let verifier;
       try {
+        const verifierStartedAt = Date.now();
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode
+          },
+          "Question verifier started"
+        );
         verifier = await verifyQuestion({
           question: generated,
           chunks: currentChunks,
@@ -254,6 +310,16 @@ export async function generateQuestions(params: {
             requestedCount: params.count
           }
         });
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode,
+            durationMs: durationMs(verifierStartedAt)
+          },
+          "Question verifier completed"
+        );
       } catch (verifyError) {
         logger.warn(
           {
@@ -289,6 +355,15 @@ export async function generateQuestions(params: {
         continue;
       }
 
+      const saveStartedAt = Date.now();
+      logger.info(
+        {
+          ownerId: params.ownerId,
+          questionType,
+          attempt: attempt + 1
+        },
+        "Question DB save started"
+      );
       const record = await prisma.question.create({
         data: {
           ownerId: params.ownerId,
@@ -304,6 +379,16 @@ export async function generateQuestions(params: {
           tagsJson: generated.tags ?? undefined
         }
       });
+      logger.info(
+        {
+          ownerId: params.ownerId,
+          questionType,
+          attempt: attempt + 1,
+          questionId: record.id,
+          durationMs: durationMs(saveStartedAt)
+        },
+        "Question DB save completed"
+      );
 
       results.push({ questionId: record.id, status: "PASSED" });
       saved = true;
