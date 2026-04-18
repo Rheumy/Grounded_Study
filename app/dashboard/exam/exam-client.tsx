@@ -130,11 +130,7 @@ export function ExamClient() {
 
     const body = await response.json();
     if (!response.ok) {
-      setStatus(
-        body.error === "No questions available"
-          ? "No questions available for a mock exam yet. Generate questions first."
-          : body.error ?? "Unable to start mock exam"
-      );
+      setStatus(body.error ?? "Unable to start mock exam.");
       return;
     }
 

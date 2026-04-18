@@ -2,12 +2,23 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
+import {
+  buildFeedbackExcludedQuestionFilter,
+  buildHiddenQuestionFilter,
+  buildUnseenQuestionFilter,
+  markQuestionsServed
+} from "@/lib/questions/exposure";
 
 const QUESTION_TYPES = ["MCQ", "SHORT_ANSWER", "TRUE_FALSE"] as const;
 const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
 
 type QuestionTypeFilter = (typeof QUESTION_TYPES)[number] | "ALL";
 type RecycleMode = (typeof RECYCLE_MODES)[number];
+
+const NEW_QUESTION_ORDER = [
+  { createdAt: "desc" },
+  { id: "asc" }
+] satisfies Prisma.QuestionOrderByWithRelationInput[];
 
 type PracticeQuestionDto = {
   id: string;
@@ -113,45 +124,6 @@ function toPracticeQuestionDto(question: {
   };
 }
 
-function buildHiddenQuestionFilter(userId: string): Prisma.QuestionWhereInput {
-  return {
-    questionFeedbacks: {
-      none: {
-        userId,
-        label: {
-          in: ["DISPUTED_INCORRECT", "IRRELEVANT"]
-        }
-      }
-    }
-  };
-}
-
-function buildAttemptedQuestionFilter(userId: string): Prisma.QuestionWhereInput {
-  return {
-    OR: [
-      {
-        practiceAttempts: {
-          some: {
-            userId
-          }
-        }
-      },
-      {
-        examSessionQuestions: {
-          some: {
-            session: {
-              userId
-            },
-            selectedAnswer: {
-              not: null
-            }
-          }
-        }
-      }
-    ]
-  };
-}
-
 function buildIncorrectQuestionFilter(userId: string): Prisma.QuestionWhereInput {
   return {
     OR: [
@@ -254,6 +226,7 @@ export async function GET(request: Request) {
           ...baseFilters,
           ...browserHiddenQuestionFilter,
           ...sessionExclusionFilters,
+          buildFeedbackExcludedQuestionFilter(user.id),
           buildHiddenQuestionFilter(user.id)
         ])
       },
@@ -269,6 +242,7 @@ export async function GET(request: Request) {
         ...baseFilters,
         ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
+        buildFeedbackExcludedQuestionFilter(user.id),
         buildHiddenQuestionFilter(user.id),
         buildIncorrectQuestionFilter(user.id)
       ]),
@@ -283,6 +257,7 @@ export async function GET(request: Request) {
         ...baseFilters,
         ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
+        buildFeedbackExcludedQuestionFilter(user.id),
         buildHiddenQuestionFilter(user.id)
       ]),
       select: practiceQuestionSelect,
@@ -294,6 +269,7 @@ export async function GET(request: Request) {
         where: buildQuestionWhere([
           ...baseFilters,
           ...browserHiddenQuestionFilter,
+          buildFeedbackExcludedQuestionFilter(user.id),
           buildHiddenQuestionFilter(user.id)
         ]),
         select: practiceQuestionSelect,
@@ -303,21 +279,18 @@ export async function GET(request: Request) {
 
     question = pickRandomQuestion(candidates);
   } else {
-    const candidates = await prisma.question.findMany({
+    question = await prisma.question.findFirst({
       where: buildQuestionWhere([
         ...baseFilters,
         ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
+        buildFeedbackExcludedQuestionFilter(user.id),
         buildHiddenQuestionFilter(user.id),
-        {
-          NOT: buildAttemptedQuestionFilter(user.id)
-        }
+        buildUnseenQuestionFilter(user.id)
       ]),
       select: practiceQuestionSelect,
-      take: 200
+      orderBy: NEW_QUESTION_ORDER
     });
-
-    question = pickRandomQuestion(candidates);
   }
 
   if (!question) {
@@ -326,6 +299,12 @@ export async function GET(request: Request) {
       message: buildEmptyMessage(questionType, recycleMode)
     });
   }
+
+  await markQuestionsServed(prisma, {
+    userId: user.id,
+    questionIds: [question.id],
+    mode: "PRACTICE"
+  });
 
   return NextResponse.json({
     question: toPracticeQuestionDto(question),

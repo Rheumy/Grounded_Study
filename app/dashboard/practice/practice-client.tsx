@@ -52,8 +52,6 @@ type Feedback = {
   userFeedback: QuestionFeedback | null;
 };
 
-const PERSISTED_NEW_QUESTION_IDS_KEY = "grounded-study:practice:new-question-ids";
-
 type PracticeSessionConfig = {
   questionType: QuestionTypeFilter;
   sessionLength: number;
@@ -81,7 +79,7 @@ function parseTags(value: unknown): string[] {
 }
 
 const recycleModeDescriptions: Record<RecycleMode, string> = {
-  NONE: "Stay with questions you have never answered before in practice or a mock exam.",
+  NONE: "Stay with questions you have not been shown before in practice or a mock exam.",
   DUE: "Mix in questions that are scheduled to come back for revision.",
   INCORRECT: "Revisit questions you previously got wrong in practice or a mock exam.",
   ALL: "Use the full question pool, including fresh questions and ones you have seen before."
@@ -120,35 +118,6 @@ function getFeedbackCommentPrompt(label: QuestionFeedbackLabel | null): string {
   return "";
 }
 
-function loadPersistedNewQuestionIds(): string[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = window.localStorage.getItem(PERSISTED_NEW_QUESTION_IDS_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function persistNewQuestionIds(questionIds: string[]) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(
-      PERSISTED_NEW_QUESTION_IDS_KEY,
-      JSON.stringify(questionIds.slice(-500))
-    );
-  } catch {
-    // Ignore storage failures and fall back to in-memory session exclusions.
-  }
-}
-
 export function PracticeClient() {
   const [view, setView] = useState<"setup" | "active" | "summary">("setup");
   const [sessionConfig, setSessionConfig] = useState<PracticeSessionConfig>({
@@ -169,16 +138,15 @@ export function PracticeClient() {
   const [isSavingQuestionFeedback, setIsSavingQuestionFeedback] = useState(false);
   const [pendingFeedbackLabel, setPendingFeedbackLabel] = useState<QuestionFeedbackLabel | null>(null);
   const [questionFeedbackComment, setQuestionFeedbackComment] = useState("");
-  const [persistedNewQuestionIds, setPersistedNewQuestionIds] = useState<string[]>([]);
   const [showQuestionStylePrompt, setShowQuestionStylePrompt] = useState(false);
   const [hiddenQuestionIds, setHiddenQuestionIds] = useState<string[]>([]);
   const [hideQuestionStatus, setHideQuestionStatus] = useState<string | null>(null);
   const [showHideQuestionWarning, setShowHideQuestionWarning] = useState(false);
   const [suppressHideWarning, setSuppressHideWarning] = useState(false);
   const [hideWarningChoice, setHideWarningChoice] = useState(false);
+  const [isHidingQuestion, setIsHidingQuestion] = useState(false);
 
   useEffect(() => {
-    setPersistedNewQuestionIds(loadPersistedNewQuestionIds());
     setHiddenQuestionIds(loadHiddenQuestionIds());
     const suppressWarning = loadSuppressHideWarningPreference();
     setSuppressHideWarning(suppressWarning);
@@ -217,17 +185,13 @@ export function PracticeClient() {
     setHideQuestionStatus(null);
     setShowHideQuestionWarning(false);
     setHideWarningChoice(suppressHideWarning);
+    setIsHidingQuestion(false);
 
     const params = new URLSearchParams({
       questionType: sessionConfig.questionType,
       recycleMode: sessionConfig.recycleMode
     });
-    const effectiveExcludeQuestionIds =
-      sessionConfig.recycleMode === "NONE"
-        ? Array.from(new Set([...persistedNewQuestionIds, ...excludeQuestionIds]))
-        : excludeQuestionIds;
-
-    effectiveExcludeQuestionIds.forEach((questionId) => params.append("excludeQuestionId", questionId));
+    excludeQuestionIds.forEach((questionId) => params.append("excludeQuestionId", questionId));
     hiddenQuestionIds.forEach((questionId) => params.append("hiddenQuestionId", questionId));
 
     const response = await fetch(`/api/practice/next?${params.toString()}`);
@@ -257,13 +221,6 @@ export function PracticeClient() {
       setServedQuestionIds((prev) =>
         prev.includes(body.question.id) ? prev : [...prev, body.question.id]
       );
-      if (sessionConfig.recycleMode === "NONE") {
-        setPersistedNewQuestionIds((prev) => {
-          const next = prev.includes(body.question.id) ? prev : [...prev, body.question.id];
-          persistNewQuestionIds(next);
-          return next;
-        });
-      }
     }
 
     if (!body.question) {
@@ -284,6 +241,7 @@ export function PracticeClient() {
     setHideQuestionStatus(null);
     setShowHideQuestionWarning(false);
     setHideWarningChoice(suppressHideWarning);
+    setIsHidingQuestion(false);
     setView("active");
     await loadQuestion([], "setup");
   };
@@ -306,6 +264,7 @@ export function PracticeClient() {
     setHideQuestionStatus(null);
     setShowHideQuestionWarning(false);
     setHideWarningChoice(suppressHideWarning);
+    setIsHidingQuestion(false);
   };
 
   const endSession = () => {
@@ -419,8 +378,27 @@ export function PracticeClient() {
     void saveQuestionFeedback(pendingFeedbackLabel, questionFeedbackComment);
   };
 
-  const applyHideQuestion = () => {
+  const applyHideQuestion = async () => {
     if (!question) return;
+
+    setIsHidingQuestion(true);
+    setHideQuestionStatus("Hiding question...");
+
+    const response = await fetch("/api/questions/hide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        questionId: question.id
+      })
+    });
+
+    const body = await response.json();
+
+    if (!response.ok) {
+      setHideQuestionStatus(body.error ?? "Unable to hide this question right now.");
+      setIsHidingQuestion(false);
+      return;
+    }
 
     const nextHiddenQuestionIds = hiddenQuestionIds.includes(question.id)
       ? hiddenQuestionIds
@@ -435,18 +413,21 @@ export function PracticeClient() {
     }
 
     setShowHideQuestionWarning(false);
-    setHideQuestionStatus("This question will be hidden from your future practice and mock exams on this browser.");
+    setHideQuestionStatus(
+      body.message ?? "We’ll hide this question from your future practice and mock exams."
+    );
     setQuestionFeedbackStatus(null);
+    setIsHidingQuestion(false);
   };
 
   const startHideQuestion = () => {
-    if (!question || isQuestionHidden) return;
+    if (!question || isQuestionHidden || isHidingQuestion) return;
 
     setHideQuestionStatus(null);
     setPendingFeedbackLabel(null);
 
     if (suppressHideWarning) {
-      applyHideQuestion();
+      void applyHideQuestion();
       return;
     }
 
@@ -665,8 +646,7 @@ export function PracticeClient() {
                       <p className="text-sm font-medium text-ink">How was this question?</p>
                       <p className="text-xs text-ink/60">
                         “Incorrect question” and “Irrelevant” are feedback labels. “Hide this
-                        question” simply removes it from future practice and mock exams for you on
-                        this browser.
+                        question” removes it from your future practice and mock exams.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -677,7 +657,7 @@ export function PracticeClient() {
                           size="sm"
                           variant={questionFeedback?.label === option.value ? "default" : "outline"}
                           onClick={() => startQuestionFeedback(option.value)}
-                          disabled={isSavingQuestionFeedback}
+                          disabled={isSavingQuestionFeedback || isHidingQuestion}
                         >
                           {option.label}
                         </Button>
@@ -687,7 +667,7 @@ export function PracticeClient() {
                         size="sm"
                         variant={isQuestionHidden ? "default" : "outline"}
                         onClick={startHideQuestion}
-                        disabled={isQuestionHidden}
+                        disabled={isQuestionHidden || isHidingQuestion}
                       >
                         {isQuestionHidden ? "Question hidden" : "Hide this question"}
                       </Button>
@@ -709,7 +689,12 @@ export function PracticeClient() {
                           Never show this warning again
                         </label>
                         <div className="flex flex-wrap gap-2">
-                          <Button type="button" size="sm" onClick={applyHideQuestion}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void applyHideQuestion()}
+                            disabled={isHidingQuestion}
+                          >
                             Confirm hide
                           </Button>
                           <Button
@@ -720,6 +705,7 @@ export function PracticeClient() {
                               setShowHideQuestionWarning(false);
                               setHideWarningChoice(suppressHideWarning);
                             }}
+                            disabled={isHidingQuestion}
                           >
                             Cancel
                           </Button>

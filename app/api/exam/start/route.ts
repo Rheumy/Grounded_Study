@@ -2,6 +2,17 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
+import {
+  buildFeedbackExcludedQuestionFilter,
+  buildHiddenQuestionFilter,
+  buildUnseenQuestionFilter,
+  markQuestionsServed
+} from "@/lib/questions/exposure";
+
+const NEW_QUESTION_ORDER = [
+  { createdAt: "desc" },
+  { id: "asc" }
+] satisfies Prisma.QuestionOrderByWithRelationInput[];
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -19,58 +30,92 @@ export async function POST(request: Request) {
       )
     : [];
 
-  const difficultyClause = difficulty
-    ? Prisma.sql`AND "difficulty" = ${difficulty}`
-    : Prisma.empty;
-  const hiddenQuestionClause =
-    hiddenQuestionIds.length > 0
-      ? Prisma.sql`AND "id" NOT IN (${Prisma.join(hiddenQuestionIds)})`
-      : Prisma.empty;
+  const questionFilters: Prisma.QuestionWhereInput[] = [
+    {
+      ownerId: user.id,
+      verifierStatus: "PASSED",
+      ...(difficulty ? { difficulty } : {})
+    },
+    buildFeedbackExcludedQuestionFilter(user.id),
+    buildHiddenQuestionFilter(user.id),
+    buildUnseenQuestionFilter(user.id)
+  ];
 
-  const questions = await prisma.$queryRaw<any[]>`
-    SELECT * FROM "Question"
-    WHERE "ownerId" = ${user.id}
-      AND "verifierStatus" = 'PASSED'
-      AND "id" NOT IN (
-        SELECT "questionId"
-        FROM "QuestionFeedback"
-        WHERE "userId" = ${user.id}
-          AND "label" IN ('DISPUTED_INCORRECT', 'IRRELEVANT')
-      )
-      ${hiddenQuestionClause}
-      ${difficultyClause}
-    ORDER BY random()
-    LIMIT ${count}
-  `;
-
-  if (questions.length === 0) {
-    return NextResponse.json({ error: "No questions available" }, { status: 400 });
+  if (hiddenQuestionIds.length > 0) {
+    questionFilters.push({
+      id: {
+        notIn: hiddenQuestionIds
+      }
+    });
   }
 
-  const session = await prisma.examSession.create({
-    data: {
-      userId: user.id,
-      modeConfigJson: {
-        count,
-        timeLimitMin,
-        difficulty
-      }
+  const questions = await prisma.question.findMany({
+    where: {
+      AND: questionFilters
+    },
+    orderBy: NEW_QUESTION_ORDER,
+    take: count,
+    select: {
+      id: true,
+      stem: true,
+      type: true,
+      optionsJson: true
     }
   });
 
-  await prisma.examSessionQuestion.createMany({
-    data: questions.map((question, index) => ({
-      sessionId: session.id,
-      questionId: question.id,
-      order: index + 1
-    }))
+  if (questions.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "You have no new questions available for this selection. Generate more questions or switch to All questions."
+      },
+      { status: 400 }
+    );
+  }
+
+  if (questions.length < count) {
+    return NextResponse.json(
+      {
+        error: `You only have ${questions.length} new question${questions.length === 1 ? "" : "s"} available for this mock exam. Generate more questions or reduce the number of questions.`
+      },
+      { status: 400 }
+    );
+  }
+
+  const session = await prisma.$transaction(async (tx) => {
+    const createdSession = await tx.examSession.create({
+      data: {
+        userId: user.id,
+        modeConfigJson: {
+          count,
+          timeLimitMin,
+          difficulty
+        }
+      }
+    });
+
+    await tx.examSessionQuestion.createMany({
+      data: questions.map((question, index) => ({
+        sessionId: createdSession.id,
+        questionId: question.id,
+        order: index + 1
+      }))
+    });
+
+    await markQuestionsServed(tx, {
+      userId: user.id,
+      questionIds: questions.map((question) => question.id),
+      mode: "EXAM"
+    });
+
+    return createdSession;
   });
 
   const payload = questions.map((question) => ({
     id: question.id,
     stem: question.stem,
     type: question.type,
-    options: question.optionsJson ?? []
+    options: Array.isArray(question.optionsJson) ? (question.optionsJson as string[]) : []
   }));
 
   return NextResponse.json({
