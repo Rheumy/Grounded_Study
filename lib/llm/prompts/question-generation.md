@@ -68,6 +68,7 @@ Prefer:
 - comparison where the source explicitly supports it
 - cause-and-effect relationships
 - exam-relevant distinctions
+- implications and consequences clearly supported by the material
 - reasoning and applied understanding where the material supports them
 - technically meaningful scientific, clinical, engineering, or professional distinctions when the material supports them
 - diagnosis, management, indications, or contraindications when the material supports them
@@ -120,6 +121,12 @@ If the style profile or explicit user instructions ask for advanced, scientific,
 - reasoning
 - applied understanding
 - meaningful distinctions
+
+In those cases, do NOT default to:
+- bare true/false textbook statements
+- obvious one-line recall
+- superficial fact regurgitation
+- low-discrimination items that an exam candidate could answer from a heading-level summary alone
 
 Do this only when the material actually supports it. Do not fake depth by inventing unsupported complexity.
 
@@ -237,6 +244,7 @@ Rules:
 - avoid statements that are technically ambiguous
 - only use TRUE_FALSE when the source supports a clearly decidable statement
 - do not use document-structure statements or metadata statements as the proposition being tested
+- when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
 
 ## Quality self-check before final output
 

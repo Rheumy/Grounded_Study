@@ -17,6 +17,7 @@ You must verify:
 6. educational quality
 
 Use ONLY the provided study material and the proposed question object.
+If style-profile context is provided, use it when judging whether the question matches the requested rigor and exam style.
 
 ## Decision standard
 
@@ -73,6 +74,7 @@ Fail if:
 - the wording leaks retrieval mechanics
 - the rationale is too weak to help the learner understand the answer
 - the question is mainly about document metadata or document structure rather than the subject matter
+- a higher-rigor or exam-style request was provided, but the question is still a clearly low-discrimination item such as a bare true/false statement, obvious recall, or one-line fact regurgitation
 
 Always reject questions based mainly on:
 - table of contents entries

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ const difficultyOptions = [
 
 export function GenerateForm({
   documents,
-  profiles: _profiles,
+  profiles,
   maxRequestCount
 }: {
   documents: Doc[];
@@ -49,6 +50,7 @@ export function GenerateForm({
   const [mcqCount, setMcqCount] = useState(5);
   const [shortAnswerCount, setShortAnswerCount] = useState(0);
   const [trueFalseCount, setTrueFalseCount] = useState(0);
+  const [selectedStyleProfileId, setSelectedStyleProfileId] = useState<string>("");
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -67,7 +69,7 @@ export function GenerateForm({
     setError(null);
     setSummary(null);
     setLoading(true);
-    setStatus("Generating questions...");
+    setStatus("Your questions are being built from your study material.");
     try {
       const typeMix =
         questionTypeMode === "SINGLE"
@@ -83,7 +85,7 @@ export function GenerateForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentIds: selectedDocs,
-          styleProfileId: null,
+          styleProfileId: selectedStyleProfileId || null,
           difficulty,
           count,
           typeMix
@@ -161,6 +163,38 @@ export function GenerateForm({
               {option.label}
             </Button>
           ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-ink">Question Style</label>
+        <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
+          <p className="text-xs text-ink/60">
+            Question Style shapes wording, depth, and explanation tone. Question type below controls
+            whether this run generates MCQ, True / False, or Short answer.
+          </p>
+          {profiles.length > 0 ? (
+            <select
+              className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
+              value={selectedStyleProfileId}
+              onChange={(event) => setSelectedStyleProfileId(event.target.value)}
+            >
+              <option value="">No saved question style</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-sm text-ink/65">
+              No saved Question Styles yet.{" "}
+              <Link href="/dashboard/style-profiles" className="font-medium text-accent hover:underline">
+                Create one
+              </Link>{" "}
+              to guide tone, level, and exam style.
+            </p>
+          )}
         </div>
       </div>
 
@@ -304,9 +338,14 @@ export function GenerateForm({
         </p>
       ) : null}
       {loading ? (
-        <p className="text-xs text-ink/60">
-          This may take a little time while we build and check each question.
-        </p>
+        <div className="space-y-1 rounded-md border border-ink/10 bg-ink/[0.02] p-3">
+          <p className="text-sm text-ink/70">
+            This can take a minute or two for higher-quality grounded questions.
+          </p>
+          <p className="text-xs text-ink/55">
+            We build each question from your study material, then check it before it reaches your question bank.
+          </p>
+        </div>
       ) : null}
       {status ? <p className="text-xs text-ink/60">{status}</p> : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}

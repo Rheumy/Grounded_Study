@@ -253,12 +253,12 @@ export async function extractStyleProfile(params: {
 
   const sections = [
     `Style profile name: ${params.name}`,
-    `\nPasted sample questions / model answers / marking guides:\n${params.examplesText ?? "(none)"}`,
+    `\nPasted guidance, example questions, model answers, or marking guides:\n${params.examplesText ?? "(none)"}`,
     `\nExtracted text from uploaded sample files (PDF/images):\n${
       [params.sampleFilesText, params.examplesImagesText].filter(Boolean).join("\n\n---\n\n") ||
       "(none)"
     }`,
-    `\nFree-text instructions from user:\n${params.instructionsText ?? "(none)"}`
+    `\nStudy context and explicit exam information:\n${params.instructionsText ?? "(none)"}`
   ];
 
   const user = sections.join("\n");

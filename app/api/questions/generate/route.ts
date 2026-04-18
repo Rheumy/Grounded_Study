@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       {
         userId: user.id,
         requestedCount: count,
-        durationMs: Date.now() - quotaCheckStartedAt
+        phaseDurationMs: Date.now() - quotaCheckStartedAt
       },
       "Generate questions quota check completed"
     );
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
         passedCount: passed,
         insufficientEvidenceCount: insufficientEvidence,
         typeMix,
-        durationMs: Date.now() - requestStartedAt
+        requestDurationMs: Date.now() - requestStartedAt
       },
       "Generate questions request completed"
     );
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
         requestedCount: count,
         typeMix,
         message,
-        durationMs: Date.now() - requestStartedAt
+        requestDurationMs: Date.now() - requestStartedAt
       },
       "Generation failed"
     );

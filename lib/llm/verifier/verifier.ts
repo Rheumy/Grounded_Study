@@ -93,6 +93,45 @@ function reasonSuggestsMetadataFailure(reason: string, failureCodes: string[]): 
   );
 }
 
+function styleRequestsHighRigor(styleProfile: unknown): boolean {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return false;
+  }
+
+  const profile = styleProfile as Record<string, unknown>;
+  const signals = [
+    profile.explicitUserInstructions,
+    profile.notes,
+    profile.explanationTone,
+    profile.distractorStyle
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam-style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\btechnical\b/.test(
+    signals
+  );
+}
+
+function looksLowDepthForHighRigor(question: GeneratedQuestion): boolean {
+  const stem = question.stem.replace(/\s+/g, " ").trim();
+  const rationale = question.rationale.replace(/\s+/g, " ").trim();
+  const normalized = `${stem} ${rationale}`.toLowerCase();
+  const stemWordCount = stem.split(/\s+/).filter(Boolean).length;
+  const rationaleWordCount = rationale.split(/\s+/).filter(Boolean).length;
+  const hasReasoningSignal =
+    /\b(?:because|best explains|best describes|compared with|comparison|difference|distinguish|how|implication|interpret|management|mechanism|most appropriate|most likely|next step|reason|therefore|underlying|versus|why)\b/.test(
+      normalized
+    );
+
+  if (question.type === "TRUE_FALSE") {
+    return stemWordCount <= 18 && !hasReasoningSignal;
+  }
+
+  return stemWordCount <= 10 && rationaleWordCount <= 24 && !hasReasoningSignal;
+}
+
 // ---------------------------------------------------------------------------
 // Normalise the model's raw verifier response.
 // The prompt asks for PASSED/FAILED but the model sometimes returns PASS/FAIL,
@@ -143,6 +182,7 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
 export async function verifyQuestion(params: {
   question: GeneratedQuestion;
   chunks: { id: string; content: string; page: number | null }[];
+  styleProfile?: unknown;
   userId?: string | null;
   questionId?: string | null;
   documentId?: string | null;
@@ -155,7 +195,11 @@ export async function verifyQuestion(params: {
     .map((chunk) => `Chunk ${chunk.id} (page ${chunk.page ?? "n/a"}): ${chunk.content}`)
     .join("\n\n");
 
-  const user = `Question JSON:\n${JSON.stringify(params.question)}\n\nExcerpts:\n${chunkMap}`;
+  const user = [
+    `Question JSON:\n${JSON.stringify(params.question)}`,
+    `Style profile JSON:\n${JSON.stringify(params.styleProfile ?? {})}`,
+    `Excerpts:\n${chunkMap}`
+  ].join("\n\n");
 
   const client = getOpenAIClient();
   const response = await client.chat.completions.create({
@@ -198,6 +242,7 @@ export async function verifyQuestion(params: {
   }
 
   let result = normalizeVerifierResponse(rawJson);
+  const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
 
   if (
     looksLikeMetadataQuestion(params.question) ||
@@ -211,6 +256,18 @@ export async function verifyQuestion(params: {
           : "Question focuses on document metadata or structure rather than the actual study material",
       failureCodes: ensureFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
       confidence: result.confidence ?? "HIGH"
+    };
+  }
+
+  if (highRigorRequested && looksLowDepthForHighRigor(params.question)) {
+    result = {
+      status: "FAILED",
+      reason:
+        result.status === "FAILED" && result.reason !== "No reason provided"
+          ? result.reason
+          : "Question is too basic for the requested exam-style or high-rigor question style",
+      failureCodes: ensureFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+      confidence: result.confidence ?? "MEDIUM"
     };
   }
 

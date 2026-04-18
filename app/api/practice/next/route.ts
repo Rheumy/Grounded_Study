@@ -200,6 +200,7 @@ export async function GET(request: Request) {
   const questionType = parseQuestionType(searchParams.get("questionType"));
   const recycleMode = parseRecycleMode(searchParams.get("recycleMode"));
   const excludeQuestionIds = searchParams.getAll("excludeQuestionId").filter(Boolean);
+  const hiddenQuestionIds = searchParams.getAll("hiddenQuestionId").filter(Boolean);
   const practiceQuestionSelect = buildPracticeQuestionSelect(user.id);
   const baseFilters: Prisma.QuestionWhereInput[] = [
     {
@@ -208,6 +209,16 @@ export async function GET(request: Request) {
       ...(questionType !== "ALL" ? { type: questionType } : {})
     }
   ];
+  const browserHiddenQuestionFilter =
+    hiddenQuestionIds.length > 0
+      ? [
+          {
+            id: {
+              notIn: hiddenQuestionIds
+            }
+          } satisfies Prisma.QuestionWhereInput
+        ]
+      : [];
   const sessionExclusionFilters =
     excludeQuestionIds.length > 0
       ? [
@@ -241,6 +252,7 @@ export async function GET(request: Request) {
         dueAt: { lte: new Date() },
         question: buildQuestionWhere([
           ...baseFilters,
+          ...browserHiddenQuestionFilter,
           ...sessionExclusionFilters,
           buildHiddenQuestionFilter(user.id)
         ])
@@ -255,6 +267,7 @@ export async function GET(request: Request) {
     const candidates = await prisma.question.findMany({
       where: buildQuestionWhere([
         ...baseFilters,
+        ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
         buildHiddenQuestionFilter(user.id),
         buildIncorrectQuestionFilter(user.id)
@@ -268,6 +281,7 @@ export async function GET(request: Request) {
     let candidates = await prisma.question.findMany({
       where: buildQuestionWhere([
         ...baseFilters,
+        ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
         buildHiddenQuestionFilter(user.id)
       ]),
@@ -277,7 +291,11 @@ export async function GET(request: Request) {
 
     if (candidates.length === 0 && sessionExclusionFilters.length > 0) {
       candidates = await prisma.question.findMany({
-        where: buildQuestionWhere([...baseFilters, buildHiddenQuestionFilter(user.id)]),
+        where: buildQuestionWhere([
+          ...baseFilters,
+          ...browserHiddenQuestionFilter,
+          buildHiddenQuestionFilter(user.id)
+        ]),
         select: practiceQuestionSelect,
         take: 200
       });
@@ -288,6 +306,7 @@ export async function GET(request: Request) {
     const candidates = await prisma.question.findMany({
       where: buildQuestionWhere([
         ...baseFilters,
+        ...browserHiddenQuestionFilter,
         ...sessionExclusionFilters,
         buildHiddenQuestionFilter(user.id),
         {

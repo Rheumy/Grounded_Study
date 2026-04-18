@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
+import { loadHiddenQuestionIds } from "@/lib/question-hiding/browser";
 
 type Question = {
   id: string;
@@ -122,7 +123,8 @@ export function ExamClient() {
       body: JSON.stringify({
         count,
         timeLimitMin,
-        difficulty
+        difficulty,
+        hiddenQuestionIds: loadHiddenQuestionIds()
       })
     });
 

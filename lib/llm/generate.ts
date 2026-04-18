@@ -241,7 +241,7 @@ export async function generateQuestions(params: {
             attempt: attempt + 1,
             retryMode,
             chunkCount: currentChunks.length,
-            durationMs: durationMs(retrievalStartedAt)
+            phaseDurationMs: durationMs(retrievalStartedAt)
           },
           "Question retrieval completed"
         );
@@ -296,7 +296,7 @@ export async function generateQuestions(params: {
             questionType,
             attempt: attempt + 1,
             retryMode,
-            durationMs: durationMs(generationStartedAt)
+            phaseDurationMs: durationMs(generationStartedAt)
           },
           "Question LLM generation completed"
         );
@@ -348,6 +348,7 @@ export async function generateQuestions(params: {
         verifier = await verifyQuestion({
           question: generated,
           chunks: currentChunks,
+          styleProfile: generationStyleProfile,
           userId: params.ownerId,
           documentId: params.documentIds.length === 1 ? params.documentIds[0] : null,
           metadata: {
@@ -361,7 +362,7 @@ export async function generateQuestions(params: {
             questionType,
             attempt: attempt + 1,
             retryMode,
-            durationMs: durationMs(verifierStartedAt)
+            phaseDurationMs: durationMs(verifierStartedAt)
           },
           "Question verifier completed"
         );
@@ -430,7 +431,7 @@ export async function generateQuestions(params: {
           questionType,
           attempt: attempt + 1,
           questionId: record.id,
-          durationMs: durationMs(saveStartedAt)
+          phaseDurationMs: durationMs(saveStartedAt)
         },
         "Question DB save completed"
       );

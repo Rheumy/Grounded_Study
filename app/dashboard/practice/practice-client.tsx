@@ -5,6 +5,12 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
+import {
+  loadHiddenQuestionIds,
+  loadSuppressHideWarningPreference,
+  persistHiddenQuestionIds,
+  persistSuppressHideWarningPreference
+} from "@/lib/question-hiding/browser";
 
 type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
@@ -165,9 +171,18 @@ export function PracticeClient() {
   const [questionFeedbackComment, setQuestionFeedbackComment] = useState("");
   const [persistedNewQuestionIds, setPersistedNewQuestionIds] = useState<string[]>([]);
   const [showQuestionStylePrompt, setShowQuestionStylePrompt] = useState(false);
+  const [hiddenQuestionIds, setHiddenQuestionIds] = useState<string[]>([]);
+  const [hideQuestionStatus, setHideQuestionStatus] = useState<string | null>(null);
+  const [showHideQuestionWarning, setShowHideQuestionWarning] = useState(false);
+  const [suppressHideWarning, setSuppressHideWarning] = useState(false);
+  const [hideWarningChoice, setHideWarningChoice] = useState(false);
 
   useEffect(() => {
     setPersistedNewQuestionIds(loadPersistedNewQuestionIds());
+    setHiddenQuestionIds(loadHiddenQuestionIds());
+    const suppressWarning = loadSuppressHideWarningPreference();
+    setSuppressHideWarning(suppressWarning);
+    setHideWarningChoice(suppressWarning);
   }, []);
 
   const currentQuestionNumber = results.length + (question ? 1 : 0);
@@ -188,6 +203,7 @@ export function PracticeClient() {
     : isCorrect
       ? "text-accent"
       : "text-danger";
+  const isQuestionHidden = question ? hiddenQuestionIds.includes(question.id) : false;
 
   const loadQuestion = async (excludeQuestionIds: string[], nextViewIfEmpty: "setup" | "summary") => {
     setStatus("Loading question...");
@@ -198,6 +214,9 @@ export function PracticeClient() {
     setQuestionFeedbackAttemptId(null);
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
+    setHideQuestionStatus(null);
+    setShowHideQuestionWarning(false);
+    setHideWarningChoice(suppressHideWarning);
 
     const params = new URLSearchParams({
       questionType: sessionConfig.questionType,
@@ -209,6 +228,7 @@ export function PracticeClient() {
         : excludeQuestionIds;
 
     effectiveExcludeQuestionIds.forEach((questionId) => params.append("excludeQuestionId", questionId));
+    hiddenQuestionIds.forEach((questionId) => params.append("hiddenQuestionId", questionId));
 
     const response = await fetch(`/api/practice/next?${params.toString()}`);
     const body = await response.json();
@@ -261,6 +281,9 @@ export function PracticeClient() {
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
     setShowQuestionStylePrompt(false);
+    setHideQuestionStatus(null);
+    setShowHideQuestionWarning(false);
+    setHideWarningChoice(suppressHideWarning);
     setView("active");
     await loadQuestion([], "setup");
   };
@@ -280,6 +303,9 @@ export function PracticeClient() {
     setPendingFeedbackLabel(null);
     setQuestionFeedbackComment("");
     setShowQuestionStylePrompt(false);
+    setHideQuestionStatus(null);
+    setShowHideQuestionWarning(false);
+    setHideWarningChoice(suppressHideWarning);
   };
 
   const endSession = () => {
@@ -391,6 +417,41 @@ export function PracticeClient() {
   const submitQuestionFeedbackWithComment = () => {
     if (!pendingFeedbackLabel) return;
     void saveQuestionFeedback(pendingFeedbackLabel, questionFeedbackComment);
+  };
+
+  const applyHideQuestion = () => {
+    if (!question) return;
+
+    const nextHiddenQuestionIds = hiddenQuestionIds.includes(question.id)
+      ? hiddenQuestionIds
+      : [...hiddenQuestionIds, question.id];
+
+    setHiddenQuestionIds(nextHiddenQuestionIds);
+    persistHiddenQuestionIds(nextHiddenQuestionIds);
+
+    if (hideWarningChoice) {
+      setSuppressHideWarning(true);
+      persistSuppressHideWarningPreference(true);
+    }
+
+    setShowHideQuestionWarning(false);
+    setHideQuestionStatus("This question will be hidden from your future practice and mock exams on this browser.");
+    setQuestionFeedbackStatus(null);
+  };
+
+  const startHideQuestion = () => {
+    if (!question || isQuestionHidden) return;
+
+    setHideQuestionStatus(null);
+    setPendingFeedbackLabel(null);
+
+    if (suppressHideWarning) {
+      applyHideQuestion();
+      return;
+    }
+
+    setHideWarningChoice(false);
+    setShowHideQuestionWarning(true);
   };
 
   const totalAnswered = results.length;
@@ -603,8 +664,9 @@ export function PracticeClient() {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-ink">How was this question?</p>
                       <p className="text-xs text-ink/60">
-                        “Incorrect question” and “Irrelevant” hide the question from future
-                        practice and mock exams for you only. They do not delete it for everyone.
+                        “Incorrect question” and “Irrelevant” are feedback labels. “Hide this
+                        question” simply removes it from future practice and mock exams for you on
+                        this browser.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -620,7 +682,50 @@ export function PracticeClient() {
                           {option.label}
                         </Button>
                       ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isQuestionHidden ? "default" : "outline"}
+                        onClick={startHideQuestion}
+                        disabled={isQuestionHidden}
+                      >
+                        {isQuestionHidden ? "Question hidden" : "Hide this question"}
+                      </Button>
                     </div>
+                    {showHideQuestionWarning ? (
+                      <div className="space-y-3 rounded-lg border border-ink/10 bg-white p-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-ink">Hide this question?</p>
+                          <p className="text-xs text-ink/60">
+                            This question will be hidden from your future practice and mock exams.
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-ink/65">
+                          <input
+                            type="checkbox"
+                            checked={hideWarningChoice}
+                            onChange={(event) => setHideWarningChoice(event.target.checked)}
+                          />
+                          Never show this warning again
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" onClick={applyHideQuestion}>
+                            Confirm hide
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setShowHideQuestionWarning(false);
+                              setHideWarningChoice(suppressHideWarning);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                     {pendingFeedbackLabel ? (
                       <div className="space-y-3 rounded-lg border border-ink/10 bg-white p-3">
                         <div className="space-y-1">
@@ -664,6 +769,8 @@ export function PracticeClient() {
                     ) : null}
                     {questionFeedbackStatus ? (
                       <p className="text-xs text-ink/60">{questionFeedbackStatus}</p>
+                    ) : hideQuestionStatus ? (
+                      <p className="text-xs text-ink/60">{hideQuestionStatus}</p>
                     ) : questionFeedback ? (
                       <p className="text-xs text-ink/60">
                         Saved as {getQuestionFeedbackLabel(questionFeedback.label) ?? "feedback"}.

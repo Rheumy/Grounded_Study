@@ -41,6 +41,27 @@ function getExplicitStyleDirectives(styleProfile: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function styleRequestsHighRigor(styleProfile: unknown): boolean {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return false;
+  }
+
+  const profile = styleProfile as Record<string, unknown>;
+  const signals = [
+    profile.explicitUserInstructions,
+    profile.notes,
+    profile.explanationTone,
+    profile.distractorStyle
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam-style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\btechnical\b/.test(
+    signals
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Option normalisation
 // The model sometimes returns options as objects with a "text", "value", or
@@ -264,10 +285,14 @@ export async function generateQuestion(params: {
   const requestedType = params.questionType ?? "MCQ";
   const difficultyDescriptor = getDifficultyDescriptor(params.styleProfile, params.difficulty);
   const explicitStyleDirectives = getExplicitStyleDirectives(params.styleProfile);
+  const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
 
   const user = [
     `Question type: ${requestedType}`,
     `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
+    highRigorRequested
+      ? "High-rigor style requested: yes — prefer applied, discriminative, reasoning-based questions when supported."
+      : null,
     explicitStyleDirectives ? `Explicit style directives:\n${explicitStyleDirectives}` : null,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,
     `\nExcerpts:\n${chunksBlock}`

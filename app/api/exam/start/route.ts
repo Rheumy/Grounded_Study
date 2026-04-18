@@ -13,10 +13,19 @@ export async function POST(request: Request) {
   const count = Math.min(50, Math.max(1, Number(body.count ?? 10)));
   const timeLimitMin = Math.min(180, Math.max(5, Number(body.timeLimitMin ?? 30)));
   const difficulty = body.difficulty ? Number(body.difficulty) : null;
+  const hiddenQuestionIds = Array.isArray(body.hiddenQuestionIds)
+    ? body.hiddenQuestionIds.filter(
+        (value: unknown): value is string => typeof value === "string" && value.trim().length > 0
+      )
+    : [];
 
   const difficultyClause = difficulty
     ? Prisma.sql`AND "difficulty" = ${difficulty}`
     : Prisma.empty;
+  const hiddenQuestionClause =
+    hiddenQuestionIds.length > 0
+      ? Prisma.sql`AND "id" NOT IN (${Prisma.join(hiddenQuestionIds)})`
+      : Prisma.empty;
 
   const questions = await prisma.$queryRaw<any[]>`
     SELECT * FROM "Question"
@@ -28,6 +37,7 @@ export async function POST(request: Request) {
         WHERE "userId" = ${user.id}
           AND "label" IN ('DISPUTED_INCORRECT', 'IRRELEVANT')
       )
+      ${hiddenQuestionClause}
       ${difficultyClause}
     ORDER BY random()
     LIMIT ${count}

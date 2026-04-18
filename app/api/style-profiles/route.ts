@@ -11,22 +11,46 @@ import { extractDocxText } from "@/lib/ingestion/docx";
 // Keep low — these are example files, not full study materials.
 const SAMPLE_FILE_MAX_PAGES = 10;
 
+function cleanStyleProfileName(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-:;,.]+/, "")
+    .replace(/[\s\-:;,.]+$/, "")
+    .trim()
+    .slice(0, 60);
+}
+
+function deriveStyleProfileName(params: {
+  courseName: string;
+  guidanceText: string | null;
+}): string {
+  const fromCourse = cleanStyleProfileName(params.courseName);
+  if (fromCourse) {
+    return fromCourse;
+  }
+
+  const guidance = params.guidanceText ?? "";
+  const firstMeaningfulLine =
+    guidance
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? "";
+  const firstSentence = firstMeaningfulLine.split(/(?<=[.!?])\s+/)[0] ?? firstMeaningfulLine;
+  const simplified = firstSentence
+    .replace(/^(please|can you|i want|i would like|i'd like|give me|make|create)\s+/i, "")
+    .replace(/^(questions?\s+(should|that)\s+be)\s+/i, "")
+    .replace(/^(for|about)\s+/i, "");
+  const fromGuidance = cleanStyleProfileName(simplified);
+
+  return fromGuidance || "My question style";
+}
+
 function buildStudyContextText(formData: FormData): string | null {
   const courseName = String(formData.get("courseName") ?? "").trim();
-  const institution = String(formData.get("institution") ?? "").trim();
-  const countryRegion = String(formData.get("countryRegion") ?? "").trim();
-  const candidateLevel = String(formData.get("candidateLevel") ?? "").trim();
 
-  const lines = [
-    courseName ? `Exam or course: ${courseName}` : null,
-    institution ? `Institution or board: ${institution}` : null,
-    countryRegion ? `Country or region: ${countryRegion}` : null,
-    candidateLevel ? `Candidate level or training stage: ${candidateLevel}` : null
-  ].filter(Boolean);
+  if (!courseName) return null;
 
-  if (lines.length === 0) return null;
-
-  return `Study context:\n${lines.join("\n")}`;
+  return `Study context:\nExam or course: ${courseName}`;
 }
 
 export async function GET() {
@@ -50,11 +74,16 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData();
-  const name = String(formData.get("name") ?? "Untitled format");
-  const examplesText = formData.get("examplesText")?.toString() || null;
-  const instructionsText = formData.get("instructionsText")?.toString() || null;
+  const courseName = String(formData.get("courseName") ?? "").trim();
+  const legacyExamplesText = formData.get("examplesText")?.toString().trim() || "";
+  const legacyInstructionsText = formData.get("instructionsText")?.toString().trim() || "";
+  const guidanceText =
+    formData.get("guidanceText")?.toString().trim() ||
+    [legacyInstructionsText, legacyExamplesText].filter(Boolean).join("\n\n") ||
+    null;
+  const name = deriveStyleProfileName({ courseName, guidanceText });
   const studyContextText = buildStudyContextText(formData);
-  const combinedInstructionsText = [instructionsText, studyContextText].filter(Boolean).join("\n\n") || null;
+  const combinedInstructionsText = studyContextText;
 
   // Collect all uploaded sample files (PDF or image, possibly multiple)
   const sampleFileEntries = formData.getAll("sampleFile");
@@ -106,11 +135,11 @@ export async function POST(request: Request) {
   const sampleFilesText = extractedTexts.length > 0 ? extractedTexts.join("\n\n---\n\n") : null;
 
   // Require at least one content input so the LLM has something to work with.
-  if (!examplesText && !instructionsText && !sampleFilesText) {
+  if (!guidanceText && !sampleFilesText) {
     return NextResponse.json(
       {
         error:
-          "Please provide at least one input: paste sample questions, upload a sample file, or add free-text instructions."
+          "Please add guidance, paste examples, or upload a sample file so we can build your question style."
       },
       { status: 400 }
     );
@@ -120,7 +149,7 @@ export async function POST(request: Request) {
   try {
     const profile = await extractStyleProfile({
       name,
-      examplesText,
+      examplesText: guidanceText,
       examplesImagesText: null, // legacy field; new uploads go through sampleFilesText
       sampleFilesText,
       instructionsText: combinedInstructionsText,
@@ -137,7 +166,7 @@ export async function POST(request: Request) {
       ownerId: user.id,
       name,
       schemaJson,
-      examplesText,
+      examplesText: guidanceText,
       examplesImagesText: null,
       sampleFilesText,
       instructionsText: combinedInstructionsText

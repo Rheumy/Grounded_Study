@@ -34,7 +34,7 @@ export default async function StyleProfilesPage() {
           Tell us what kind of questions you want
         </h1>
         <p className="mt-2 max-w-3xl text-sm text-ink/65">
-          Add a short description, paste example questions or marking guides, or upload example files.
+          Describe the style you want, or paste example questions and marking guides that match your exam.
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default async function StyleProfilesPage() {
         <CardHeader>
           <CardTitle>Create a question style</CardTitle>
           <CardDescription>
-            File upload is optional. Text-only and text-plus-file styles both work.
+            Please give as much detail as possible. The more guidance you provide, the closer your questions will match your exam.
           </CardDescription>
         </CardHeader>
         <CardContent>

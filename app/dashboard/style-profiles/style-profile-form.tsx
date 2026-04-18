@@ -18,14 +18,13 @@ export function StyleProfileForm() {
     setStatus(null);
 
     const formEl = event.currentTarget;
-    const examplesVal = (formEl.elements.namedItem("examplesText") as HTMLTextAreaElement).value.trim();
-    const instructionsVal = (formEl.elements.namedItem("instructionsText") as HTMLTextAreaElement).value.trim();
+    const guidanceVal = (formEl.elements.namedItem("guidanceText") as HTMLTextAreaElement).value.trim();
     const fileInput = formEl.elements.namedItem("sampleFile") as HTMLInputElement;
     const hasFiles = fileInput.files && fileInput.files.length > 0;
 
-    if (!examplesVal && !instructionsVal && !hasFiles) {
+    if (!guidanceVal && !hasFiles) {
       setError(
-        "Please provide at least one input: paste sample questions, upload a file, or add instructions."
+        "Please add guidance or upload a file so we can build your question style."
       );
       return;
     }
@@ -63,22 +62,13 @@ export function StyleProfileForm() {
         </label>
 
         <label className="space-y-2">
-          <span className="text-sm font-medium text-ink">What type of questions do you want?</span>
-          <Textarea
-            name="instructionsText"
-            rows={4}
-            placeholder="e.g. Case-based MCQs with one best answer and detailed explanations"
-          />
-        </label>
-
-        <label className="space-y-2">
           <span className="text-sm font-medium text-ink">
-            Paste example questions, model answers, or marking guides
+            Describe the questions you want, or paste example questions and marking guides
           </span>
           <Textarea
-            name="examplesText"
-            rows={8}
-            placeholder="Paste any sample questions or marking guides here"
+            name="guidanceText"
+            rows={10}
+            placeholder="e.g. Advanced exam-style questions with applied reasoning, or paste example questions, model answers, and marking guides"
           />
         </label>
 
