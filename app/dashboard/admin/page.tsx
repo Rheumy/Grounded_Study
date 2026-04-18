@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db/prisma";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminIngestButton } from "@/app/dashboard/admin/admin-ingest-button";
+import { AdminQuestionFeedbackViewer } from "@/app/dashboard/admin/question-feedback-viewer";
 
 function toAmount(value: { toNumber(): number } | number | null | undefined): number {
   if (typeof value === "number") return value;
@@ -21,7 +22,11 @@ function formatUsd(value: number): string {
   }).format(value);
 }
 
-export default async function AdminPage() {
+type AdminPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+export default async function AdminPage({ searchParams }: AdminPageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.isAdmin) {
     return (
@@ -299,6 +304,8 @@ export default async function AdminPage() {
           )}
         </CardContent>
       </Card>
+
+      <AdminQuestionFeedbackViewer searchParams={searchParams} />
     </div>
   );
 }
