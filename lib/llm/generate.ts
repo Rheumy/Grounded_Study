@@ -2,7 +2,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestion, type RetrievalChunk } from "@/lib/llm/question-generator";
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
-import { getNonEducationalChunkReason, retrieveChunks } from "@/lib/retrieval/retrieve";
+import {
+  getEducationalChunkScore,
+  getNonEducationalChunkReason,
+  retrieveChunks
+} from "@/lib/retrieval/retrieve";
 import { logger } from "@/lib/observability/logger";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
@@ -31,7 +35,13 @@ async function getRandomChunkSnippet(documentIds: string[]) {
     ORDER BY random()
     LIMIT 12
   `;
-  const chunk = chunks.find((candidate) => !getNonEducationalChunkReason(candidate.content));
+  const chunk = chunks
+    .filter((candidate) => !getNonEducationalChunkReason(candidate.content))
+    .map((candidate) => ({
+      chunk: candidate,
+      score: getEducationalChunkScore(candidate.content)
+    }))
+    .sort((a, b) => b.score - a.score)[0]?.chunk;
 
   if (!chunk && chunks.length > 0) {
     logger.info(
@@ -44,6 +54,40 @@ async function getRandomChunkSnippet(documentIds: string[]) {
   }
 
   return chunk?.content?.slice(0, 200) ?? "core concepts and key principles";
+}
+
+function toStyleProfileObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function buildGenerationStyleProfile(
+  styleProfile:
+    | {
+        name: string;
+        schemaJson: Prisma.JsonValue;
+        instructionsText: string | null;
+      }
+    | null
+): Record<string, unknown> {
+  if (!styleProfile) {
+    return {};
+  }
+
+  const schemaJson = toStyleProfileObject(styleProfile.schemaJson);
+
+  return {
+    ...schemaJson,
+    profileName: styleProfile.name,
+    ...(styleProfile.instructionsText
+      ? {
+          explicitUserInstructions: styleProfile.instructionsText
+        }
+      : {})
+  };
 }
 
 function shouldRefreshRetrievalAfterVerifierFailure(reason: string) {
@@ -157,6 +201,7 @@ export async function generateQuestions(params: {
     | { questionTypeDistribution?: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } }
     | null;
   const profileDistribution = profileSchema?.questionTypeDistribution ?? null;
+  const generationStyleProfile = buildGenerationStyleProfile(styleProfile);
 
   const typeSlots = buildTypeSlots(params.count, params.typeMix ?? null, profileDistribution);
 
@@ -214,7 +259,7 @@ export async function generateQuestions(params: {
       );
 
       if (currentChunks.length === 0) {
-        reason = "No suitable study content was available for a grounded question";
+        reason = "Retrieved material was mostly document metadata or lacked enough teachable content";
         retryMode = "refreshed_retrieval";
         continue;
       }
@@ -233,7 +278,7 @@ export async function generateQuestions(params: {
           "Question LLM generation started"
         );
         generated = await generateQuestion({
-          styleProfile: styleProfile?.schemaJson ?? {},
+          styleProfile: generationStyleProfile,
           difficulty: params.difficulty,
           questionType,
           chunks: currentChunks,

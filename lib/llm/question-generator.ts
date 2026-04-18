@@ -18,6 +18,29 @@ function truncate(content: string, max = 800) {
   return `${content.slice(0, max)}...`;
 }
 
+function getDifficultyDescriptor(styleProfile: unknown, difficulty: number): string | null {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return null;
+  }
+
+  const difficultyMap = (styleProfile as Record<string, unknown>).difficultyMap;
+  if (!difficultyMap || typeof difficultyMap !== "object" || Array.isArray(difficultyMap)) {
+    return null;
+  }
+
+  const value = (difficultyMap as Record<string, unknown>)[String(difficulty)];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getExplicitStyleDirectives(styleProfile: unknown): string | null {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return null;
+  }
+
+  const value = (styleProfile as Record<string, unknown>).explicitUserInstructions;
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 // ---------------------------------------------------------------------------
 // Option normalisation
 // The model sometimes returns options as objects with a "text", "value", or
@@ -239,13 +262,18 @@ export async function generateQuestion(params: {
     .join("\n\n");
 
   const requestedType = params.questionType ?? "MCQ";
+  const difficultyDescriptor = getDifficultyDescriptor(params.styleProfile, params.difficulty);
+  const explicitStyleDirectives = getExplicitStyleDirectives(params.styleProfile);
 
   const user = [
-    `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,
-    `Difficulty: ${params.difficulty}`,
     `Question type: ${requestedType}`,
+    `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
+    explicitStyleDirectives ? `Explicit style directives:\n${explicitStyleDirectives}` : null,
+    `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,
     `\nExcerpts:\n${chunksBlock}`
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   // Use chat completions with json_object directly — the structured output
   // endpoint's strict mode always rejects schemas with optional fields, so we

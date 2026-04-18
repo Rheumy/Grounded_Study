@@ -14,6 +14,85 @@ export type VerifierResult = {
   confidence?: "HIGH" | "MEDIUM" | "LOW";
 };
 
+function normalizeFailureCodes(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+
+  return Array.from(
+    new Set(
+      raw
+        .filter((code): code is string => typeof code === "string")
+        .map((code) => code.trim().toUpperCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+function ensureFailureCode(failureCodes: string[], code: string): string[] {
+  return failureCodes.includes(code) ? failureCodes : [...failureCodes, code];
+}
+
+function countMatches(value: string, pattern: RegExp): number {
+  const matches = value.match(pattern);
+  return matches ? matches.length : 0;
+}
+
+function looksLikeMetadataQuestion(question: GeneratedQuestion): boolean {
+  const normalized = [question.stem, question.answer, question.rationale]
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    /\btable of contents\b/.test(normalized) ||
+    /\bcontents page\b/.test(normalized) ||
+    /\bbibliograph(y|ic)\b/.test(normalized) ||
+    /\breference list\b/.test(normalized) ||
+    /\bworks cited\b/.test(normalized) ||
+    /\bwho (?:is|are) the authors?\b/.test(normalized) ||
+    /\bauthors?\b.{0,40}\b(?:qualifications?|affiliations?|biograph(?:y|ical)|credentials?|names?)\b/.test(normalized) ||
+    /\baffiliations?\b/.test(normalized) ||
+    /\bqualifications?\b/.test(normalized) ||
+    /\bcopyright\b/.test(normalized) ||
+    /\bpublisher\b/.test(normalized) ||
+    /\bdoi\b/.test(normalized) ||
+    /\bpage numbers?\b/.test(normalized) ||
+    /\bheading(?:s)?\b/.test(normalized) ||
+    /\bchapter titles?\b/.test(normalized) ||
+    /\bsection headings?\b/.test(normalized) ||
+    /\bthe passage says\b/.test(normalized) ||
+    /\bthe excerpt mentions\b/.test(normalized)
+  ) {
+    return true;
+  }
+
+  return (
+    countMatches(normalized, /\b(?:chapter|section|appendix|heading)\b/g) >= 2 &&
+    countMatches(normalized, /\b(?:page|contents|reference|bibliography)\b/g) >= 1
+  );
+}
+
+function reasonSuggestsMetadataFailure(reason: string, failureCodes: string[]): boolean {
+  const normalized = reason.trim().toLowerCase();
+
+  if (
+    failureCodes.includes("LOW_EDUCATIONAL_VALUE") &&
+    /metadata|document structure|table of contents|author (?:name|qualification|affiliation|biography)|bibliograph|reference|copyright|publisher/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+
+  return /metadata|document structure|table of contents|author (?:name|qualification|affiliation|biography)|bibliograph|reference list|copyright|publisher|document formatting/.test(
+    normalized
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Normalise the model's raw verifier response.
 // The prompt asks for PASSED/FAILED but the model sometimes returns PASS/FAIL,
@@ -44,9 +123,7 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
     rawStatus === "VALID" ||
     rawStatus === "OK";
 
-  const failureCodes = Array.isArray(obj.failureCodes)
-    ? obj.failureCodes.filter((code): code is string => typeof code === "string")
-    : [];
+  const failureCodes = normalizeFailureCodes(obj.failureCodes);
   const rawConfidence = String(obj.confidence ?? "")
     .trim()
     .toUpperCase();
@@ -120,9 +197,29 @@ export async function verifyQuestion(params: {
     return { status: "FAILED", reason: "Verifier returned non-JSON response" };
   }
 
-  const result = normalizeVerifierResponse(rawJson);
+  let result = normalizeVerifierResponse(rawJson);
+
+  if (
+    looksLikeMetadataQuestion(params.question) ||
+    reasonSuggestsMetadataFailure(result.reason, result.failureCodes ?? [])
+  ) {
+    result = {
+      status: "FAILED",
+      reason:
+        result.reason && result.reason !== "No reason provided"
+          ? result.reason
+          : "Question focuses on document metadata or structure rather than the actual study material",
+      failureCodes: ensureFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+      confidence: result.confidence ?? "HIGH"
+    };
+  }
+
   logger.info(
-    { status: result.status, reason: result.reason.slice(0, 200) },
+    {
+      status: result.status,
+      reason: result.reason.slice(0, 200),
+      failureCodes: result.failureCodes ?? []
+    },
     "Verifier result"
   );
   return result;

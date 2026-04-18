@@ -40,9 +40,11 @@ Topic or subject tags inferred from the samples. Omit if not clear.
 ### notes (optional)
 Any important stylistic observations not captured by the above fields. Use "inferred" when a value had no direct evidence.
 Do NOT store MCQ option count in notes — the system always generates exactly 4 options regardless of what the samples show.
+If the user explicitly asks for advanced, scientific, technical, fellowship-level, board-style, or exam-style questions, preserve that requested rigor in `notes`.
 
 ## Rules
 - Only use the provided inputs. Do not invent facts.
 - If evidence is missing for a field, use conservative defaults and note "inferred" in `notes`.
 - Weights in `questionTypeDistribution` should reflect actual sample distribution where evident.
 - `answerStyle` must always be populated — default to "one to two complete sentences" if unclear.
+- Preserve explicit user-stated exam level, technical depth, and conceptual emphasis. Do not wash those instructions out into generic defaults.
