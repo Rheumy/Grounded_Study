@@ -31,9 +31,53 @@ function ensureFailureCode(failureCodes: string[], code: string): string[] {
   return failureCodes.includes(code) ? failureCodes : [...failureCodes, code];
 }
 
+function ensureFailureCodes(failureCodes: string[], codes: string[]): string[] {
+  return codes.reduce((acc, code) => ensureFailureCode(acc, code), failureCodes);
+}
+
 function countMatches(value: string, pattern: RegExp): number {
   const matches = value.match(pattern);
   return matches ? matches.length : 0;
+}
+
+function normalizeSpace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function wordCount(value: string): number {
+  return normalizeSpace(value).split(/\s+/).filter(Boolean).length;
+}
+
+function tokenize(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4);
+}
+
+function hasReasoningSignal(value: string): boolean {
+  return /\b(?:because|best explains|best describes|compared with|comparison|difference|distinguish|exception|how|implication|interpret|management|mechanism|most appropriate|most likely|next step|qualifier|reason|therefore|timing|underlying|versus|why)\b/.test(
+    value
+  );
+}
+
+function hasNuanceSignal(value: string): boolean {
+  return /\b(?:although|compared with|despite|except|however|in contrast|instead|least likely|more likely|most likely|rather than|relative to|typically|unless|unlike|usually|when)\b/.test(
+    value
+  );
+}
+
+function tokenOverlapCount(a: string, b: string): number {
+  const left = new Set(tokenize(a));
+  const right = new Set(tokenize(b));
+  let count = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function looksLikeMetadataQuestion(question: GeneratedQuestion): boolean {
@@ -109,27 +153,123 @@ function styleRequestsHighRigor(styleProfile: unknown): boolean {
     .join(" ")
     .toLowerCase();
 
-  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam-style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\btechnical\b/.test(
+  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam[- ]style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\bspecialist\b|\btechnical\b/.test(
     signals
   );
 }
 
-function looksLowDepthForHighRigor(question: GeneratedQuestion): boolean {
-  const stem = question.stem.replace(/\s+/g, " ").trim();
-  const rationale = question.rationale.replace(/\s+/g, " ").trim();
-  const normalized = `${stem} ${rationale}`.toLowerCase();
-  const stemWordCount = stem.split(/\s+/).filter(Boolean).length;
-  const rationaleWordCount = rationale.split(/\s+/).filter(Boolean).length;
-  const hasReasoningSignal =
-    /\b(?:because|best explains|best describes|compared with|comparison|difference|distinguish|how|implication|interpret|management|mechanism|most appropriate|most likely|next step|reason|therefore|underlying|versus|why)\b/.test(
-      normalized
-    );
-
-  if (question.type === "TRUE_FALSE") {
-    return stemWordCount <= 18 && !hasReasoningSignal;
+function stemTelegraphsCorrectOption(question: GeneratedQuestion): boolean {
+  if (question.type !== "MCQ" || !question.options || question.options.length !== 4) {
+    return false;
   }
 
-  return stemWordCount <= 10 && rationaleWordCount <= 24 && !hasReasoningSignal;
+  const answerIndex = question.options.indexOf(question.answer);
+  if (answerIndex === -1) {
+    return false;
+  }
+
+  const stem = normalizeSpace(question.stem).toLowerCase();
+  const answer = normalizeSpace(question.answer).toLowerCase();
+  const directMention = answer.length >= 12 && stem.includes(answer);
+
+  const overlaps = question.options.map((option) => tokenOverlapCount(question.stem, option));
+  const correctOverlap = overlaps[answerIndex] ?? 0;
+  const nextBestOverlap = overlaps
+    .filter((_, index) => index !== answerIndex)
+    .sort((a, b) => b - a)[0] ?? 0;
+
+  return directMention || (correctOverlap >= 3 && correctOverlap >= nextBestOverlap + 2);
+}
+
+function mcqDistractorsLookWeak(question: GeneratedQuestion): boolean {
+  if (question.type !== "MCQ" || !question.options || question.options.length !== 4) {
+    return false;
+  }
+
+  const answerIndex = question.options.indexOf(question.answer);
+  if (answerIndex === -1) {
+    return false;
+  }
+
+  const distractors = question.options.filter((_, index) => index !== answerIndex);
+  const answerWordCount = wordCount(question.answer);
+  const distractorWordCounts = distractors.map((option) => wordCount(option));
+  const averageDistractorLength =
+    distractorWordCounts.reduce((sum, count) => sum + count, 0) / distractorWordCounts.length;
+  const veryShortDistractors = distractorWordCounts.filter((count) => count <= 2).length;
+  const genericDistractors = distractors.filter((option) =>
+    /^(?:all of the above|none of the above|both|neither|unknown|not enough information)$/i.test(
+      option.trim()
+    )
+  ).length;
+
+  return (
+    genericDistractors > 0 ||
+    veryShortDistractors >= 2 ||
+    (answerWordCount >= averageDistractorLength + 4 && veryShortDistractors >= 1)
+  );
+}
+
+function looksLikeLowDepthTrueFalse(question: GeneratedQuestion): boolean {
+  if (question.type !== "TRUE_FALSE") {
+    return false;
+  }
+
+  const stem = normalizeSpace(question.stem);
+  const normalized = stem.toLowerCase();
+  const shortStem = wordCount(stem) <= 20;
+  const obviousSummaryPattern =
+    /\bis characterized by\b|\bis defined as\b|\bis caused by\b|\bis associated with\b|\bpresents with\b|\bresults in\b|\brefers to\b/.test(
+      normalized
+    );
+  const absoluteTrap = /\b(?:always|never|all|none|only|entirely|exclusively)\b/.test(normalized);
+
+  return (
+    (shortStem && !hasReasoningSignal(normalized) && !hasNuanceSignal(normalized)) ||
+    (obviousSummaryPattern && !hasNuanceSignal(normalized)) ||
+    (absoluteTrap && shortStem && !hasNuanceSignal(normalized))
+  );
+}
+
+function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
+  if (question.type !== "MCQ") {
+    return false;
+  }
+
+  const stem = normalizeSpace(question.stem);
+  const rationale = normalizeSpace(question.rationale);
+  const normalizedStem = stem.toLowerCase();
+  const shortDefinitionalStem =
+    wordCount(stem) <= 16 &&
+    /^(?:what is|which of the following is|which statement is|which term best describes|which feature is)/.test(
+      normalizedStem
+    );
+
+  return (
+    (shortDefinitionalStem && !hasReasoningSignal(normalizedStem)) ||
+    (wordCount(stem) <= 12 &&
+      wordCount(rationale) <= 24 &&
+      !hasReasoningSignal(`${normalizedStem} ${rationale.toLowerCase()}`))
+  );
+}
+
+function looksLowDepthForHighRigor(question: GeneratedQuestion): boolean {
+  if (question.type === "TRUE_FALSE") {
+    return looksLikeLowDepthTrueFalse(question);
+  }
+
+  if (question.type === "MCQ") {
+    return (
+      looksLikeLowDepthMcq(question) ||
+      stemTelegraphsCorrectOption(question) ||
+      mcqDistractorsLookWeak(question)
+    );
+  }
+
+  const stem = normalizeSpace(question.stem);
+  const rationale = normalizeSpace(question.rationale);
+  const normalized = `${stem} ${rationale}`.toLowerCase();
+  return wordCount(stem) <= 10 && wordCount(rationale) <= 24 && !hasReasoningSignal(normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -260,13 +400,19 @@ export async function verifyQuestion(params: {
   }
 
   if (highRigorRequested && looksLowDepthForHighRigor(params.question)) {
+    const extraFailureCodes =
+      params.question.type === "MCQ"
+        ? ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"]
+        : params.question.type === "TRUE_FALSE"
+          ? ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+          : ["LOW_EDUCATIONAL_VALUE"];
     result = {
       status: "FAILED",
       reason:
         result.status === "FAILED" && result.reason !== "No reason provided"
           ? result.reason
           : "Question is too basic for the requested exam-style or high-rigor question style",
-      failureCodes: ensureFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+      failureCodes: ensureFailureCodes(result.failureCodes ?? [], extraFailureCodes),
       confidence: result.confidence ?? "MEDIUM"
     };
   }

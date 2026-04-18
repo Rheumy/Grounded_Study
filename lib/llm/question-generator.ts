@@ -41,25 +41,62 @@ function getExplicitStyleDirectives(styleProfile: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function styleRequestsHighRigor(styleProfile: unknown): boolean {
+function collectStyleSignals(styleProfile: unknown): string {
   if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
-    return false;
+    return "";
   }
 
   const profile = styleProfile as Record<string, unknown>;
-  const signals = [
+  return [
     profile.explicitUserInstructions,
     profile.notes,
     profile.explanationTone,
     profile.distractorStyle
   ]
-    .filter((value): value is string => typeof value === "string")
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .join(" ")
     .toLowerCase();
+}
 
-  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam-style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\btechnical\b/.test(
+function styleRequestsHighRigor(styleProfile: unknown): boolean {
+  const signals = collectStyleSignals(styleProfile);
+  return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam[- ]style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\bspecialist\b|\btechnical\b/.test(
     signals
   );
+}
+
+function buildHighRigorGuidance(
+  requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE",
+  styleProfile: unknown
+): string | null {
+  if (!styleRequestsHighRigor(styleProfile)) {
+    return null;
+  }
+
+  const lines = [
+    "Treat the requested advanced or exam-style rigor as a strong priority whenever the material supports it.",
+    "Prefer questions that separate superficial familiarity from precise grounded understanding.",
+    "Do not let the stem telegraph the answer through obvious wording, simplistic absolutes, or by echoing only one option."
+  ];
+
+  if (requestedType === "MCQ") {
+    lines.push(
+      "Use four options from the same conceptual family where possible.",
+      "Make at least two or three distractors plausible to a partially knowledgeable learner.",
+      "The correct answer should win because of a subtle but meaningful grounded distinction, not because it is the only clearly relevant option."
+    );
+  } else if (requestedType === "TRUE_FALSE") {
+    lines.push(
+      "Use a nuanced, clearly decidable proposition whose truth value depends on a qualifier, exception, mechanism, timing detail, context, or other meaningful grounded distinction.",
+      "Do not default to broad summary statements or easy absolute traps."
+    );
+  } else {
+    lines.push(
+      "Ask for a precise distinction, implication, mechanism, comparison, or application that rewards deep understanding rather than headline recall."
+    );
+  }
+
+  return lines.map((line) => `- ${line}`).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +329,9 @@ export async function generateQuestion(params: {
     `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
     highRigorRequested
       ? "High-rigor style requested: yes — prefer applied, discriminative, reasoning-based questions when supported."
+      : null,
+    buildHighRigorGuidance(requestedType, params.styleProfile)
+      ? `Exam-discriminative guidance:\n${buildHighRigorGuidance(requestedType, params.styleProfile)}`
       : null,
     explicitStyleDirectives ? `Explicit style directives:\n${explicitStyleDirectives}` : null,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,

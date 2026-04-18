@@ -72,6 +72,8 @@ Prefer:
 - reasoning and applied understanding where the material supports them
 - technically meaningful scientific, clinical, engineering, or professional distinctions when the material supports them
 - diagnosis, management, indications, or contraindications when the material supports them
+- discriminative questions that separate superficial familiarity from precise understanding when advanced or exam-style rigor is requested
+- questions where the learner must notice a meaningful qualifier, exception, mechanism, timing detail, or contextual distinction that is clearly supported by the material
 
 Avoid:
 - questions that depend on outside knowledge
@@ -80,6 +82,9 @@ Avoid:
 - awkwardly specific trivia unless the material clearly emphasizes it
 - learner-facing wording that sounds like database retrieval or source commentary
 - questions based mainly on document metadata or document structure
+- black-and-white textbook summary statements when advanced or exam-style rigor was requested
+- simplistic true/false items that can be guessed from exam technique rather than grounded understanding
+- MCQs where the correct answer is the only option that is clearly relevant to the stem
 
 Never write a question mainly about:
 - table of contents entries
@@ -121,12 +126,16 @@ If the style profile or explicit user instructions ask for advanced, scientific,
 - reasoning
 - applied understanding
 - meaningful distinctions
+- precise qualifiers, exceptions, timing, context, or implication where the material supports them
+- subtle but meaningful one-best-answer distinctions rather than headline-fact recognition
 
 In those cases, do NOT default to:
 - bare true/false textbook statements
 - obvious one-line recall
 - superficial fact regurgitation
 - low-discrimination items that an exam candidate could answer from a heading-level summary alone
+- giveaway stems whose wording strongly hints at the answer
+- MCQs with one clearly relevant option and three weak distractors from unrelated conceptual families
 
 Do this only when the material actually supports it. Do not fake depth by inventing unsupported complexity.
 
@@ -218,12 +227,17 @@ Rules:
 - generate exactly 4 options
 - exactly 1 option is correct
 - 3 options must be plausible but clearly wrong when judged against the provided material
+- when advanced or exam-style rigor is requested, at least 2 to 3 distractors should be plausible to a partially knowledgeable learner
+- when advanced or exam-style rigor is requested, distractors should usually come from the same conceptual family as the correct answer
 - options must be mutually distinct
 - options must be parallel in style where possible
 - do not use “all of the above” or “none of the above”
 - do not make the correct answer obviously longer or more specific unless the source itself requires it
 - `answer` must exactly match the correct option text
 - avoid trivial recall from headings, contents pages, or author metadata when choosing the tested fact
+- when possible, make the correct answer win because of a subtle but meaningful grounded distinction, not because it is the only option that obviously fits
+- prefer distractor differences grounded in mechanism, pathology or histology nuance, phenotype overlap, inheritance nuance, management implication, diagnostic criterion, timing, context, or exception when the material supports them
+- avoid one highly specific correct option paired with three vague or generic distractors
 - when possible, the rationale should explain why the correct answer is right and why key distractors are wrong or incomplete
 
 ### SHORT_ANSWER
@@ -245,6 +259,9 @@ Rules:
 - only use TRUE_FALSE when the source supports a clearly decidable statement
 - do not use document-structure statements or metadata statements as the proposition being tested
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
+- when higher-rigor or exam-style questions are requested, prefer statements whose truth value depends on a qualifier, mechanism, exception, timing detail, context, management caveat, or overlapping feature that is clearly grounded
+- avoid broad summary statements such as “X is characterized by Y” unless the distinction is genuinely tricky and clearly supported
+- avoid giveaway wording, especially simplistic absolutes used only as an easy trap
 
 ## Quality self-check before final output
 
@@ -256,10 +273,13 @@ Before returning the JSON, silently verify:
 - Is the answer unambiguous?
 - Are the citations real and relevant?
 - For MCQ, are all distractors plausible but wrong?
+- For MCQ, would at least two distractors tempt a partially knowledgeable learner?
 - For TRUE_FALSE, is the statement genuinely decidable?
+- For TRUE_FALSE, does the truth value depend on a meaningful grounded distinction rather than a broad summary cue?
 - For SHORT_ANSWER, is the model answer complete but not overreaching?
 - Does the rationale sound professional and educational?
 - Does any learner-facing text leak retrieval wording?
+- Does the stem itself telegraph the answer?
 
 If any of these fail and cannot be fixed, return `INSUFFICIENT_EVIDENCE`.
 

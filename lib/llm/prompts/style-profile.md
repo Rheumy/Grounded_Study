@@ -19,6 +19,7 @@ If samples contain only MCQs, set MCQ near 1.0 and others near 0.0. If mixed, re
 
 ### distractorStyle
 Short description of how wrong options are written in MCQ questions. Examples: "plausible near-misses", "common misconceptions", "opposite of correct", "technically correct but contextually wrong". Infer from samples or default to "plausible near-misses".
+If the user asks for advanced, specialist, scientific, clinical, fellowship-level, or exam-style questions, prefer a distractor style that preserves subtle but meaningful same-family alternatives rather than generic wrong answers.
 
 ### explanationTone
 Short description of how rationale/explanations should read. Examples: "concise and direct", "Socratic with follow-up questions", "formal academic", "conversational". Infer from samples or default to "clear and direct".
@@ -41,6 +42,7 @@ Topic or subject tags inferred from the samples. Omit if not clear.
 Any important stylistic observations not captured by the above fields. Use "inferred" when a value had no direct evidence.
 Do NOT store MCQ option count in notes — the system always generates exactly 4 options regardless of what the samples show.
 If the user explicitly asks for advanced, scientific, technical, fellowship-level, board-style, or exam-style questions, preserve that requested rigor in `notes`.
+If the user asks for advanced or specialist-style rigor, preserve signals about discrimination, nuanced distinctions, plausible distractors, and precise qualifiers in `notes` rather than flattening them into generic wording.
 
 ## Rules
 - Only use the provided inputs. Do not invent facts.

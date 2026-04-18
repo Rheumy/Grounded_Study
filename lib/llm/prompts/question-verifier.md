@@ -52,12 +52,23 @@ For MCQ, fail if:
 - distractors are implausible nonsense
 - the correct answer is obvious from wording alone
 - distractors are not meaningfully distinct from one another
+- fewer than 2 distractors would plausibly tempt a partially knowledgeable candidate when advanced or exam-style rigor was requested
+- the correct answer is the only option from the relevant conceptual family
+- the correct answer mainly wins because it is much more specific, much more relevant, or much less vague than the distractors
+- the stem wording strongly telegraphs the correct option
 
 ### D. Short-answer quality
 For SHORT_ANSWER, fail if:
 - the model answer goes beyond the source
 - the model answer omits essential material needed for correctness
 - the question is too vague to grade fairly from the provided material
+
+### D2. True/False discrimination
+For TRUE_FALSE, fail if:
+- the statement is a broad textbook-summary claim rather than a discriminative grounded proposition
+- the truth value is obvious from giveaway wording
+- the statement relies on a simplistic absolute as an easy trap rather than a meaningful grounded distinction
+- advanced or exam-style rigor was requested, but the statement could be guessed without deep knowledge of the material
 
 ### E. Citation fidelity
 Fail if:
@@ -75,6 +86,8 @@ Fail if:
 - the rationale is too weak to help the learner understand the answer
 - the question is mainly about document metadata or document structure rather than the subject matter
 - a higher-rigor or exam-style request was provided, but the question is still a clearly low-discrimination item such as a bare true/false statement, obvious recall, or one-line fact regurgitation
+- the question is topic-relevant but still reads like a black-and-white textbook summary rather than an exam-discriminative item for the requested level
+- the stem itself gives away the answer instead of requiring grounded reasoning or precise distinction
 
 Always reject questions based mainly on:
 - table of contents entries
