@@ -42,12 +42,15 @@ Fail if:
 Fail if:
 - the proposed correct answer is not clearly supported
 - more than one answer could reasonably be correct
+- the keyed answer is not definitely the best-supported answer from the cited evidence
 - the answer is incomplete for the question asked
 - the TRUE_FALSE answer is not clearly decidable from the source
+- the answer depends on omitted qualifiers, missing context, or unstated assumptions
 
 ### C. MCQ distractor quality
 For MCQ, fail if:
 - any distractor is actually supported as correct
+- any distractor could still be reasonably defended as correct from the provided evidence
 - distractors are duplicates or near-duplicates
 - distractors are implausible nonsense
 - the correct answer is obvious from wording alone
@@ -56,6 +59,12 @@ For MCQ, fail if:
 - the correct answer is the only option from the relevant conceptual family
 - the correct answer mainly wins because it is much more specific, much more relevant, or much less vague than the distractors
 - the stem wording strongly telegraphs the correct option
+
+For every MCQ, silently run an answer-key challenge:
+- identify the nearest competing distractor
+- compare the keyed answer against that distractor using the cited evidence
+- pass only if the keyed answer is clearly stronger
+- if the distractor remains reasonably defensible, fail
 
 ### D. Short-answer quality
 For SHORT_ANSWER, fail if:
@@ -69,6 +78,7 @@ For TRUE_FALSE, fail if:
 - the truth value is obvious from giveaway wording
 - the statement relies on a simplistic absolute as an easy trap rather than a meaningful grounded distinction
 - advanced or exam-style rigor was requested, but the statement could be guessed without deep knowledge of the material
+- the truth value changes depending on omitted qualifiers, unstated assumptions, or missing context
 
 ### E. Citation fidelity
 Fail if:
@@ -76,6 +86,7 @@ Fail if:
 - chunk IDs are wrong
 - excerpts are not present in the cited chunk
 - the cited excerpts do not actually support the answer
+- the rationale claims more than the cited excerpts support
 - the citations only weakly relate to the main claim
 
 ### F. Educational quality
@@ -84,10 +95,12 @@ Fail if:
 - the question is trivial in a low-value way
 - the wording leaks retrieval mechanics
 - the rationale is too weak to help the learner understand the answer
+- the rationale merely paraphrases the stem without explaining why the answer is correct
 - the question is mainly about document metadata or document structure rather than the subject matter
 - a higher-rigor or exam-style request was provided, but the question is still a clearly low-discrimination item such as a bare true/false statement, obvious recall, or one-line fact regurgitation
 - the question is topic-relevant but still reads like a black-and-white textbook summary rather than an exam-discriminative item for the requested level
 - the stem itself gives away the answer instead of requiring grounded reasoning or precise distinction
+- the question overstates the source or makes an unsupported comparative claim such as more effective, more specific, more severe, earlier, safer, better, worse, or preferred when the cited evidence does not clearly support that comparison
 
 Always reject questions based mainly on:
 - table of contents entries
@@ -130,5 +143,10 @@ Allowed `failureCodes`:
 Rules:
 - If `status` is `"PASSED"`, `failureCodes` must be an empty array.
 - If `status` is `"FAILED"`, include the main applicable codes.
+- Prefer `MULTIPLE_POSSIBLE_ANSWERS` when a distractor is still reasonably defensible.
+- Prefer `UNSUPPORTED_ANSWER` when the keyed answer is not clearly stronger than the evidence.
+- Prefer `UNSUPPORTED_RATIONALE` when the explanation adds claims not supported by the citations.
+- Prefer `INVALID_TRUE_FALSE` when the truth value depends on omitted qualifiers or missing context.
+- Prefer `AMBIGUOUS_QUESTION` when the stem or proposition can be read in more than one defensible way.
 - Keep `reason` brief, readable, and specific.
 - Do not output anything except the JSON object.

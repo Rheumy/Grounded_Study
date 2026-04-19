@@ -64,6 +64,11 @@ enum QuestionFeedbackLabel {
   IRRELEVANT
 }
 
+enum QuestionExposureMode {
+  PRACTICE
+  EXAM
+}
+
 model User {
   id             String    @id @default(cuid())
   name           String?
@@ -86,6 +91,7 @@ model User {
   usageCounters  UsageCounter[]
   aiUsageEvents  AiUsageEvent[]
   questionFeedbacks QuestionFeedback[]
+  questionExposures QuestionExposure[]
 }
 
 model Account {
@@ -232,9 +238,30 @@ model Question {
   spacedRepetitionSchedules SpacedRepetitionSchedule[]
   aiUsageEvents AiUsageEvent[]
   questionFeedbacks QuestionFeedback[]
+  questionExposures QuestionExposure[]
 
   @@index([ownerId])
   @@index([difficulty])
+}
+
+model QuestionExposure {
+  id             String               @id @default(cuid())
+  userId         String
+  questionId     String
+  firstServedAt  DateTime
+  lastServedAt   DateTime
+  timesServed    Int                  @default(1)
+  lastServedMode QuestionExposureMode
+  hiddenAt       DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId, hiddenAt])
+  @@index([questionId])
 }
 
 model PracticeAttempt {

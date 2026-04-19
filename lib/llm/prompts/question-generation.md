@@ -156,7 +156,10 @@ Write directly as if teaching from the material itself.
 
 The rationale must:
 - explain why the answer is correct
+- stay tightly tied to what the cited evidence actually supports
 - clarify why alternatives are wrong or incomplete when relevant
+- not merely restate the stem
+- not introduce extra claims, comparisons, or causal language that the citations do not support
 - remain grounded
 - sound professional, calm, and educational
 
@@ -226,7 +229,9 @@ You must generate the requested type exactly.
 Rules:
 - generate exactly 4 options
 - exactly 1 option is correct
+- the correct option must be directly and clearly supported by the cited material
 - 3 options must be plausible but clearly wrong when judged against the provided material
+- no distractor may be equally supported, equally defensible, or correct under a reasonable reading of the cited evidence
 - when advanced or exam-style rigor is requested, at least 2 to 3 distractors should be plausible to a partially knowledgeable learner
 - when advanced or exam-style rigor is requested, distractors should usually come from the same conceptual family as the correct answer
 - options must be mutually distinct
@@ -239,6 +244,9 @@ Rules:
 - prefer distractor differences grounded in mechanism, pathology or histology nuance, phenotype overlap, inheritance nuance, management implication, diagnostic criterion, timing, context, or exception when the material supports them
 - avoid one highly specific correct option paired with three vague or generic distractors
 - when possible, the rationale should explain why the correct answer is right and why key distractors are wrong or incomplete
+- silently identify the closest competing distractor before finalizing the item
+- only keep the item if you can justify from the cited evidence why the keyed answer clearly beats that closest distractor
+- if two options could both be reasonably defended from the source, return `INSUFFICIENT_EVIDENCE`
 
 ### SHORT_ANSWER
 Rules:
@@ -257,6 +265,7 @@ Rules:
 - avoid trivial negation traps
 - avoid statements that are technically ambiguous
 - only use TRUE_FALSE when the source supports a clearly decidable statement
+- reject statements whose truth value depends on missing context, omitted qualifiers, or unstated assumptions
 - do not use document-structure statements or metadata statements as the proposition being tested
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
 - when higher-rigor or exam-style questions are requested, prefer statements whose truth value depends on a qualifier, mechanism, exception, timing detail, context, management caveat, or overlapping feature that is clearly grounded
@@ -274,10 +283,15 @@ Before returning the JSON, silently verify:
 - Are the citations real and relevant?
 - For MCQ, are all distractors plausible but wrong?
 - For MCQ, would at least two distractors tempt a partially knowledgeable learner?
+- For MCQ, is the keyed answer definitely better supported than the closest distractor?
+- For MCQ, could any distractor also be reasonably defended from the cited material?
 - For TRUE_FALSE, is the statement genuinely decidable?
 - For TRUE_FALSE, does the truth value depend on a meaningful grounded distinction rather than a broad summary cue?
+- For TRUE_FALSE, would the statement still be clearly true or false without smuggling in extra assumptions?
 - For SHORT_ANSWER, is the model answer complete but not overreaching?
 - Does the rationale sound professional and educational?
+- Does the rationale explain the answer in a way that matches the cited evidence?
+- Does the rationale avoid unsupported comparative or causal claims?
 - Does any learner-facing text leak retrieval wording?
 - Does the stem itself telegraph the answer?
 

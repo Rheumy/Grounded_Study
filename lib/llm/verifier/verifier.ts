@@ -3,6 +3,7 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { logger } from "@/lib/observability/logger";
 import type { GeneratedQuestion } from "@/lib/llm/schemas/question";
+import { VerifierSchema, type FailureCode } from "@/lib/llm/schemas/verifier";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
 const MODEL = "gpt-4o-mini";
@@ -10,11 +11,27 @@ const MODEL = "gpt-4o-mini";
 export type VerifierResult = {
   status: "PASSED" | "FAILED";
   reason: string;
-  failureCodes?: string[];
+  failureCodes?: FailureCode[];
   confidence?: "HIGH" | "MEDIUM" | "LOW";
 };
 
-function normalizeFailureCodes(raw: unknown): string[] {
+const ALLOWED_FAILURE_CODES = new Set<FailureCode>([
+  "UNSUPPORTED_STEM",
+  "UNSUPPORTED_ANSWER",
+  "UNSUPPORTED_RATIONALE",
+  "AMBIGUOUS_QUESTION",
+  "MULTIPLE_POSSIBLE_ANSWERS",
+  "WEAK_DISTRACTORS",
+  "INVALID_TRUE_FALSE",
+  "OVERREACHING_MODEL_ANSWER",
+  "MISSING_CITATIONS",
+  "BAD_CITATION_LINKAGE",
+  "RETRIEVAL_JARGON",
+  "LOW_EDUCATIONAL_VALUE",
+  "INVALID_STRUCTURE"
+]);
+
+function normalizeFailureCodes(raw: unknown): FailureCode[] {
   if (!Array.isArray(raw)) return [];
 
   return Array.from(
@@ -22,16 +39,16 @@ function normalizeFailureCodes(raw: unknown): string[] {
       raw
         .filter((code): code is string => typeof code === "string")
         .map((code) => code.trim().toUpperCase())
-        .filter(Boolean)
+        .filter((code): code is FailureCode => ALLOWED_FAILURE_CODES.has(code as FailureCode))
     )
   );
 }
 
-function ensureFailureCode(failureCodes: string[], code: string): string[] {
+function ensureFailureCode(failureCodes: FailureCode[], code: FailureCode): FailureCode[] {
   return failureCodes.includes(code) ? failureCodes : [...failureCodes, code];
 }
 
-function ensureFailureCodes(failureCodes: string[], codes: string[]): string[] {
+function ensureFailureCodes(failureCodes: FailureCode[], codes: FailureCode[]): FailureCode[] {
   return codes.reduce((acc, code) => ensureFailureCode(acc, code), failureCodes);
 }
 
@@ -42,6 +59,12 @@ function countMatches(value: string, pattern: RegExp): number {
 
 function normalizeSpace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeComparableText(value: string): string {
+  return normalizeSpace(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "");
 }
 
 function wordCount(value: string): number {
@@ -78,6 +101,112 @@ function tokenOverlapCount(a: string, b: string): number {
     }
   }
   return count;
+}
+
+function rationaleRestatesStemOrAnswer(question: GeneratedQuestion): boolean {
+  const rationale = normalizeComparableText(question.rationale);
+  if (!rationale) {
+    return true;
+  }
+
+  return (
+    rationale === normalizeComparableText(question.stem) ||
+    rationale === normalizeComparableText(question.answer)
+  );
+}
+
+function citationExcerptAppearsInChunk(excerpt: string, chunkContent: string): boolean {
+  const normalizedExcerpt = normalizeComparableText(excerpt);
+  const normalizedChunk = normalizeComparableText(chunkContent);
+
+  if (!normalizedExcerpt || normalizedExcerpt.length < 5) {
+    return false;
+  }
+
+  return normalizedChunk.includes(normalizedExcerpt);
+}
+
+function findCitationLinkageFailure(params: {
+  question: GeneratedQuestion;
+  chunks: { id: string; content: string; page: number | null }[];
+}): VerifierResult | null {
+  if (params.question.citations.length === 0) {
+    return {
+      status: "FAILED",
+      reason: "Question is missing supporting citations",
+      failureCodes: ["MISSING_CITATIONS"],
+      confidence: "HIGH"
+    };
+  }
+
+  const chunkMap = new Map(params.chunks.map((chunk) => [chunk.id, chunk]));
+  for (const citation of params.question.citations) {
+    const chunk = chunkMap.get(citation.chunkId);
+    if (!chunk) {
+      return {
+        status: "FAILED",
+        reason: "Citation references an unknown chunk",
+        failureCodes: ["BAD_CITATION_LINKAGE"],
+        confidence: "HIGH"
+      };
+    }
+
+    if (!citationExcerptAppearsInChunk(citation.excerpt, chunk.content)) {
+      return {
+        status: "FAILED",
+        reason: "Citation excerpt does not match the cited evidence",
+        failureCodes: ["BAD_CITATION_LINKAGE"],
+        confidence: "HIGH"
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildMcqChallengeContext(question: GeneratedQuestion): string | null {
+  if (question.type !== "MCQ" || !question.options || question.options.length !== 4) {
+    return null;
+  }
+
+  const distractors = question.options.filter((option) => option !== question.answer);
+  if (distractors.length === 0) {
+    return null;
+  }
+
+  const scoredDistractors = distractors.map((option) => ({
+    option,
+    score:
+      tokenOverlapCount(question.stem, option) * 3 +
+      tokenOverlapCount(question.answer, option) * 2 +
+      Math.max(0, 3 - Math.abs(wordCount(question.answer) - wordCount(option)))
+  }));
+
+  const nearest = scoredDistractors.sort((a, b) => b.score - a.score)[0]?.option;
+  if (!nearest) {
+    return null;
+  }
+
+  return [
+    "MCQ answer-key challenge:",
+    `- Keyed answer: ${question.answer}`,
+    `- Nearest competing distractor: ${nearest}`,
+    "- Decide whether the cited evidence makes the keyed answer clearly stronger than this distractor.",
+    "- If the distractor is still reasonably defensible, the item must fail."
+  ].join("\n");
+}
+
+function buildTrueFalseChallengeContext(question: GeneratedQuestion): string | null {
+  if (question.type !== "TRUE_FALSE") {
+    return null;
+  }
+
+  return [
+    "True/False challenge:",
+    `- Proposed truth value: ${question.answer}`,
+    "- Check whether the statement remains clearly true or false without adding missing qualifiers, hidden assumptions, or external context.",
+    "- If the truth value changes under a reasonable reading of the provided evidence, the item must fail."
+  ].join("\n");
 }
 
 function looksLikeMetadataQuestion(question: GeneratedQuestion): boolean {
@@ -302,7 +431,7 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
     rawStatus === "VALID" ||
     rawStatus === "OK";
 
-  const failureCodes = normalizeFailureCodes(obj.failureCodes);
+  const failureCodes = normalizeFailureCodes(obj.failureCodes ?? obj.failure_codes ?? obj.failures);
   const rawConfidence = String(obj.confidence ?? "")
     .trim()
     .toUpperCase();
@@ -331,15 +460,34 @@ export async function verifyQuestion(params: {
   const promptPath = path.join(process.cwd(), "lib", "llm", "prompts", "question-verifier.md");
   const system = await fs.readFile(promptPath, "utf8");
 
+  const citationFailure = findCitationLinkageFailure(params);
+  if (citationFailure) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: citationFailure.failureCodes ?? [],
+        reason: citationFailure.reason
+      },
+      "Verifier rejected question before LLM review"
+    );
+    return citationFailure;
+  }
+
   const chunkMap = params.chunks
     .map((chunk) => `Chunk ${chunk.id} (page ${chunk.page ?? "n/a"}): ${chunk.content}`)
     .join("\n\n");
+  const mcqChallengeContext = buildMcqChallengeContext(params.question);
+  const trueFalseChallengeContext = buildTrueFalseChallengeContext(params.question);
 
   const user = [
     `Question JSON:\n${JSON.stringify(params.question)}`,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile ?? {})}`,
+    mcqChallengeContext,
+    trueFalseChallengeContext,
     `Excerpts:\n${chunkMap}`
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const client = getOpenAIClient();
   const response = await client.chat.completions.create({
@@ -382,6 +530,21 @@ export async function verifyQuestion(params: {
   }
 
   let result = normalizeVerifierResponse(rawJson);
+  const parsedResult = VerifierSchema.safeParse(result);
+  if (!parsedResult.success) {
+    logger.warn(
+      {
+        issues: parsedResult.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message
+        }))
+      },
+      "Verifier returned invalid normalized payload"
+    );
+    result = { status: "FAILED", reason: "Verifier returned invalid response" };
+  } else {
+    result = parsedResult.data;
+  }
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
 
   if (
@@ -399,8 +562,23 @@ export async function verifyQuestion(params: {
     };
   }
 
+  if (rationaleRestatesStemOrAnswer(params.question)) {
+    result = {
+      status: "FAILED",
+      reason:
+        result.status === "FAILED" && result.reason !== "No reason provided"
+          ? result.reason
+          : "Rationale does not explain the answer beyond restating the stem or answer",
+      failureCodes: ensureFailureCodes(result.failureCodes ?? [], [
+        "UNSUPPORTED_RATIONALE",
+        "LOW_EDUCATIONAL_VALUE"
+      ]),
+      confidence: result.confidence ?? "HIGH"
+    };
+  }
+
   if (highRigorRequested && looksLowDepthForHighRigor(params.question)) {
-    const extraFailureCodes =
+    const extraFailureCodes: FailureCode[] =
       params.question.type === "MCQ"
         ? ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"]
         : params.question.type === "TRUE_FALSE"

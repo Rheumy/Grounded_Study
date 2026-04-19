@@ -90,8 +90,12 @@ function buildGenerationStyleProfile(
   };
 }
 
-function shouldRefreshRetrievalAfterVerifierFailure(reason: string) {
-  const normalized = reason.trim().toLowerCase();
+function shouldRefreshRetrievalAfterVerifierFailure(params: {
+  reason: string;
+  failureCodes?: string[];
+}) {
+  const normalized = params.reason.trim().toLowerCase();
+  const failureCodes = new Set(params.failureCodes ?? []);
   if (!normalized) {
     return true;
   }
@@ -100,7 +104,66 @@ function shouldRefreshRetrievalAfterVerifierFailure(reason: string) {
     return false;
   }
 
+  if (
+    failureCodes.has("UNSUPPORTED_ANSWER") ||
+    failureCodes.has("UNSUPPORTED_RATIONALE") ||
+    failureCodes.has("AMBIGUOUS_QUESTION") ||
+    failureCodes.has("MULTIPLE_POSSIBLE_ANSWERS") ||
+    failureCodes.has("WEAK_DISTRACTORS") ||
+    failureCodes.has("INVALID_TRUE_FALSE") ||
+    failureCodes.has("MISSING_CITATIONS") ||
+    failureCodes.has("BAD_CITATION_LINKAGE") ||
+    failureCodes.has("INVALID_STRUCTURE")
+  ) {
+    return false;
+  }
+
   return true;
+}
+
+function logTargetedVerifierRejection(params: {
+  ownerId: string;
+  questionType: QuestionTypeName;
+  attempt: number;
+  reason: string;
+  failureCodes?: string[];
+}) {
+  const failureCodes = new Set(params.failureCodes ?? []);
+  const reason = params.reason.toLowerCase();
+  const baseLog = {
+    ownerId: params.ownerId,
+    questionType: params.questionType,
+    attempt: params.attempt,
+    failureCodes: [...failureCodes],
+    reason: params.reason
+  };
+
+  if (
+    failureCodes.has("UNSUPPORTED_ANSWER") ||
+    failureCodes.has("MULTIPLE_POSSIBLE_ANSWERS") ||
+    failureCodes.has("AMBIGUOUS_QUESTION")
+  ) {
+    logger.info(baseLog, "Verifier rejected ambiguous or weakly supported answer key");
+  }
+
+  if (failureCodes.has("WEAK_DISTRACTORS") || failureCodes.has("MULTIPLE_POSSIBLE_ANSWERS")) {
+    logger.info(baseLog, "Verifier rejected MCQ because a distractor remained too defensible");
+  }
+
+  if (failureCodes.has("UNSUPPORTED_RATIONALE") || failureCodes.has("BAD_CITATION_LINKAGE")) {
+    logger.info(baseLog, "Verifier rejected explanation or citation alignment");
+  }
+
+  if (
+    /(?:better|best|earlier|faster|inferior|less|more|preferred|safer|superior|versus|worse)/.test(
+      reason
+    ) &&
+    (failureCodes.has("UNSUPPORTED_ANSWER") ||
+      failureCodes.has("UNSUPPORTED_RATIONALE") ||
+      failureCodes.has("AMBIGUOUS_QUESTION"))
+  ) {
+    logger.info(baseLog, "Verifier rejected unsupported comparative distinction");
+  }
 }
 
 /**
@@ -384,6 +447,13 @@ export async function generateQuestions(params: {
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;
+        logTargetedVerifierRejection({
+          ownerId: params.ownerId,
+          questionType,
+          attempt: attempt + 1,
+          reason: verifier.reason,
+          failureCodes: verifier.failureCodes
+        });
         if (verifier.failureCodes?.includes("LOW_EDUCATIONAL_VALUE")) {
           logger.info(
             {
@@ -395,7 +465,10 @@ export async function generateQuestions(params: {
             "Verifier rejected low-educational-value question"
           );
         }
-        retryMode = shouldRefreshRetrievalAfterVerifierFailure(verifier.reason)
+        retryMode = shouldRefreshRetrievalAfterVerifierFailure({
+          reason: verifier.reason,
+          failureCodes: verifier.failureCodes
+        })
           ? "refreshed_retrieval"
           : "same_chunks";
         continue;

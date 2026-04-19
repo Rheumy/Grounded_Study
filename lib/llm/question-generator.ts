@@ -13,6 +13,10 @@ export type RetrievalChunk = {
   page: number | null;
 };
 
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function truncate(content: string, max = 800) {
   if (content.length <= max) return content;
   return `${content.slice(0, max)}...`;
@@ -105,13 +109,41 @@ function buildHighRigorGuidance(
 // "label" key instead of plain strings.
 // ---------------------------------------------------------------------------
 function extractOptionText(opt: unknown): string {
-  if (typeof opt === "string") return opt;
+  if (typeof opt === "string") return collapseWhitespace(opt);
   if (opt !== null && typeof opt === "object" && !Array.isArray(opt)) {
     const o = opt as Record<string, unknown>;
     const val = o.text ?? o.value ?? o.content ?? o.label ?? o.option ?? o.answer;
-    if (val !== undefined) return String(val);
+    if (val !== undefined) return collapseWhitespace(String(val));
   }
-  return String(opt ?? "");
+  return collapseWhitespace(String(opt ?? ""));
+}
+
+function normalizeAnswerMatchKey(value: string): string {
+  return collapseWhitespace(value)
+    .replace(/^[A-D][\)\.\:\-]\s*/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "");
+}
+
+function canonicalizeMcqAnswer(answer: string, options: string[]): string {
+  const trimmed = collapseWhitespace(answer);
+  if (/^[A-D]$/i.test(trimmed)) {
+    const letterIndex = trimmed.toUpperCase().charCodeAt(0) - 65;
+    if (options[letterIndex]) {
+      return options[letterIndex];
+    }
+  }
+
+  const answerKey = normalizeAnswerMatchKey(trimmed);
+  const matchedOption = options.find((option) => normalizeAnswerMatchKey(option) === answerKey);
+  return matchedOption ?? trimmed;
+}
+
+function canonicalizeTrueFalseAnswer(answer: string): string {
+  const normalized = collapseWhitespace(answer).toLowerCase();
+  if (["true", "t", "yes"].includes(normalized)) return "True";
+  if (["false", "f", "no"].includes(normalized)) return "False";
+  return collapseWhitespace(answer);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,10 +155,16 @@ function normalizeCitation(c: unknown): Record<string, unknown> {
     return { chunkId: String(c ?? ""), excerpt: "", page: null };
   }
   const obj = c as Record<string, unknown>;
+  const pageCandidate = obj.page ?? obj.pageNumber ?? null;
+  const numericPage = pageCandidate != null ? Number(pageCandidate) : null;
   return {
-    chunkId: String(obj.chunkId ?? obj.chunk_id ?? obj.id ?? obj.source ?? ""),
-    excerpt: String(obj.excerpt ?? obj.quote ?? obj.text ?? obj.content ?? obj.passage ?? ""),
-    page: obj.page != null ? Number(obj.page) : (obj.pageNumber != null ? Number(obj.pageNumber) : null)
+    chunkId: collapseWhitespace(
+      String(obj.chunkId ?? obj.chunk_id ?? obj.id ?? obj.source ?? "")
+    ),
+    excerpt: collapseWhitespace(
+      String(obj.excerpt ?? obj.quote ?? obj.text ?? obj.content ?? obj.passage ?? "")
+    ),
+    page: Number.isInteger(numericPage) ? numericPage : null
   };
 }
 
@@ -230,7 +268,7 @@ function normalizeRawQuestion(
   }
 
   // --- answer ---
-  const answer = String(obj.answer ?? obj.correct_answer ?? obj.correctAnswer ?? "").trim();
+  let answer = String(obj.answer ?? obj.correct_answer ?? obj.correctAnswer ?? "").trim();
 
   // MCQ: enforce exactly 4 options.
   // If the model returns more than 4, keep the correct answer option plus the
@@ -243,6 +281,14 @@ function normalizeRawQuestion(
     } else {
       options = options.slice(0, 4);
     }
+  }
+
+  if (type === "MCQ" && options) {
+    answer = canonicalizeMcqAnswer(answer, options);
+  }
+
+  if (type === "TRUE_FALSE") {
+    answer = canonicalizeTrueFalseAnswer(answer);
   }
 
   // --- rationale ---
