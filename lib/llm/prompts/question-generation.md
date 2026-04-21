@@ -50,6 +50,9 @@ This is a hard rule.
 
 Before finalizing any question, silently run the Outsider Test against the configured `assumedBackgroundLevel`.
 If a reader at that level could answer correctly without studying the cited material, return `INSUFFICIENT_EVIDENCE`.
+Judge the exact stem or proposition being tested, not the fame or familiarity of the overall topic.
+Do NOT reject solely because the general topic is widely known, commonly taught, or professionally important.
+Reject only if the outsider could answer this exact question correctly without the specific cited detail.
 
 The Outsider Test has three failure modes:
 1. `STEM-TELEGRAPH`: a layperson could guess the answer from the wording of the stem alone.
@@ -90,6 +93,7 @@ Engineering:
 Pattern:
 - ACCEPT versions are only decidable if the learner has actually studied the specific source.
 - REJECT versions are field-general truths or headline summaries.
+- A familiar topic can still be acceptable when the exact tested claim depends on a source-specific qualifier, comparison, mechanism nuance, threshold, exception, timing detail, implication, or contextual distinction.
 
 ## What makes a good generated question
 
@@ -321,7 +325,7 @@ Rules:
 - do not use document-structure statements or metadata statements as the proposition being tested
 - the truth value must depend on a source-specific distinction, not a field-general truth
 - broad summary statements, definitional truths, and headline-level propositions must be rejected even when technically grounded
-- if the configured outsider could answer correctly without studying the cited material, return `INSUFFICIENT_EVIDENCE`
+- if the configured outsider could answer this exact statement correctly without the specific cited detail, return `INSUFFICIENT_EVIDENCE`
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
 - when higher-rigor or exam-style questions are requested, prefer statements whose truth value depends on a qualifier, mechanism, exception, timing detail, context, management caveat, or overlapping feature that is clearly grounded
 - avoid broad summary statements such as “X is characterized by Y” unless the distinction is genuinely tricky and clearly supported
@@ -331,7 +335,7 @@ Rules:
 
 Before returning the JSON, silently verify:
 - Does the question fail the Outsider Test for the configured `assumedBackgroundLevel`?
-- Would a reader at that background level need the specific source rather than field-general knowledge?
+- Would a reader at that background level need the specific source detail tested here rather than just knowing the general topic?
 - Is the tested point more than a headline summary or definitional truth?
 - Is every claim supported by the provided chunks?
 - Is the question actually useful?

@@ -131,7 +131,9 @@ function buildOutsiderTestContext(styleProfile: unknown): string {
     `- assumedBackgroundLevel: ${assumedBackgroundLevel}`,
     `- outsider: ${outsiderDefinition}`,
     "- A passing question must require a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail.",
-    "- If this outsider could answer from the stem wording or field-general knowledge without studying the cited material, return INSUFFICIENT_EVIDENCE."
+    "- Judge the exact stem or proposition, not the fame or familiarity of the overall topic.",
+    "- If this outsider could answer this exact stem or proposition correctly without the specific cited detail, return INSUFFICIENT_EVIDENCE.",
+    "- Do not reject solely because the broader topic is familiar, widely taught, or clinically important."
   ].join("\n");
 }
 

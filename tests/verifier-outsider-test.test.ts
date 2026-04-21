@@ -82,4 +82,39 @@ describe("verifier outsider test", () => {
       expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
     );
   });
+
+  it("does not auto-reject a concise source-specific true/false claim just because the topic is familiar", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem: "Compared with the 50 mg regimen, the 100 mg regimen reached response by week 12 more often.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The cited material reports a higher week-12 response rate with the 100 mg regimen than with the 50 mg regimen.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "week 12 response was higher with 100 mg than with 50 mg",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "In the study cohort, week 12 response was higher with 100 mg than with 50 mg, despite similar baseline severity.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "specialist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
 });

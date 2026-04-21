@@ -18,7 +18,26 @@ type GenerationSummary = {
   requestedCount: number;
   passedCount: number;
   failedCount: number;
+  primaryFailureReason?: string | null;
 };
+
+function describeGenerationFailure(reason?: string | null): string {
+  const normalized = reason?.trim().toLowerCase() ?? "";
+
+  if (
+    /background knowledge|field[- ]general|general knowledge|headline|summary|without reading|specific material|specific source|cited source|too basic|too general|widely known/.test(
+      normalized
+    )
+  ) {
+    return "No question was saved because the generated item was too general and could be answered without needing the source.";
+  }
+
+  if (/invalid response|non-json|validation|schema/.test(normalized)) {
+    return "No question was saved because a clean grounded question could not be formed from the selected material.";
+  }
+
+  return "No question was saved because the generated item could not be supported cleanly enough from the selected source.";
+}
 
 const difficultyOptions = [
   { value: 1, label: "Easy" },
@@ -106,11 +125,14 @@ export function GenerateForm({
       const results = Array.isArray(body.results) ? (body.results as GenerationResult[]) : [];
       const passedCount = body.summary?.passedCount ?? results.filter((r) => r.status === "PASSED").length;
       const failedCount = body.summary?.failedCount ?? Math.max(0, results.length - passedCount);
+      const primaryFailureReason =
+        results.find((result) => result.status !== "PASSED")?.reason ?? null;
 
       setSummary({
         requestedCount: body.summary?.requestedCount ?? count,
         passedCount,
-        failedCount
+        failedCount,
+        primaryFailureReason
       });
       setStatus(null);
     } catch {
@@ -359,8 +381,9 @@ export function GenerateForm({
             )}
             {summary.failedCount > 0 ? (
               <p className="text-sm text-ink/70">
-                Some questions could not be generated because there was insufficient evidence or
-                the model response was invalid. You can try again.
+                {summary.passedCount === 0
+                  ? describeGenerationFailure(summary.primaryFailureReason)
+                  : "Some questions could not be generated because a clean grounded item could not be formed from the selected source. You can try again."}
               </p>
             ) : (
               <p className="text-sm text-ink/70">

@@ -96,6 +96,12 @@ function hasNuanceSignal(value: string): boolean {
   );
 }
 
+function hasSpecificitySignal(value: string): boolean {
+  return /\b(?:\d+(?:\.\d+)?(?:%|x)?|after|before|during|within|over|under|between|at least|at most|more than|less than|only if|only when|except|unless|compared with|compared to|relative to|rather than|versus|vs\.?)\b/.test(
+    value
+  );
+}
+
 function tokenOverlapCount(a: string, b: string): number {
   const left = new Set(tokenize(a));
   const right = new Set(tokenize(b));
@@ -314,9 +320,10 @@ function buildOutsiderChallengeContext(styleProfile: unknown): string {
     "Outsider Test pre-flight:",
     `- assumedBackgroundLevel: ${assumedBackgroundLevel}`,
     `- outsider: ${outsiderDefinition}`,
-    "- Before any other check, decide whether this outsider could answer correctly without reading the cited evidence.",
+    "- Before any other check, decide whether this outsider could answer this exact stem or proposition correctly without reading the cited evidence.",
     "- If yes, the question must fail with LOW_EDUCATIONAL_VALUE.",
-    "- A passing question must depend on a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail."
+    "- A passing question must depend on a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail.",
+    "- Do not fail solely because the broader topic is familiar, widely taught, or clinically important."
   ].join("\n");
 }
 
@@ -367,7 +374,7 @@ function mcqDistractorsLookWeak(question: GeneratedQuestion): boolean {
 
   return (
     genericDistractors > 0 ||
-    veryShortDistractors >= 2 ||
+    (veryShortDistractors >= 2 && answerWordCount >= 4) ||
     (answerWordCount >= averageDistractorLength + 4 && veryShortDistractors >= 1)
   );
 }
@@ -380,6 +387,7 @@ function looksLikeLowDepthTrueFalse(question: GeneratedQuestion): boolean {
   const stem = normalizeSpace(question.stem);
   const normalized = stem.toLowerCase();
   const shortStem = wordCount(stem) <= 20;
+  const hasSpecificity = hasSpecificitySignal(normalized);
   const obviousSummaryPattern =
     /\bis characterized by\b|\bis defined as\b|\bis caused by\b|\bis associated with\b|\bpresents with\b|\bresults in\b|\brefers to\b/.test(
       normalized
@@ -387,9 +395,12 @@ function looksLikeLowDepthTrueFalse(question: GeneratedQuestion): boolean {
   const absoluteTrap = /\b(?:always|never|all|none|only|entirely|exclusively)\b/.test(normalized);
 
   return (
-    (shortStem && !hasReasoningSignal(normalized) && !hasNuanceSignal(normalized)) ||
-    (obviousSummaryPattern && !hasNuanceSignal(normalized)) ||
-    (absoluteTrap && shortStem && !hasNuanceSignal(normalized))
+    (!hasSpecificity &&
+      shortStem &&
+      !hasReasoningSignal(normalized) &&
+      !hasNuanceSignal(normalized)) ||
+    (!hasSpecificity && obviousSummaryPattern && !hasNuanceSignal(normalized)) ||
+    (!hasSpecificity && absoluteTrap && shortStem && !hasNuanceSignal(normalized))
   );
 }
 
@@ -399,8 +410,11 @@ function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
   }
 
   const stem = normalizeSpace(question.stem);
+  const answer = normalizeSpace(question.answer);
   const rationale = normalizeSpace(question.rationale);
   const normalizedStem = stem.toLowerCase();
+  const detailContext = `${normalizedStem} ${answer.toLowerCase()} ${rationale.toLowerCase()}`;
+  const hasSpecificity = hasSpecificitySignal(detailContext) || hasNuanceSignal(detailContext);
   const shortDefinitionalStem =
     wordCount(stem) <= 16 &&
     /^(?:what is|which of the following is|which statement is|which term best describes|which feature is)/.test(
@@ -408,10 +422,11 @@ function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
     );
 
   return (
-    (shortDefinitionalStem && !hasReasoningSignal(normalizedStem)) ||
+    (!hasSpecificity && shortDefinitionalStem && !hasReasoningSignal(normalizedStem)) ||
     (wordCount(stem) <= 12 &&
       wordCount(rationale) <= 24 &&
-      !hasReasoningSignal(`${normalizedStem} ${rationale.toLowerCase()}`))
+      !hasReasoningSignal(detailContext) &&
+      !hasSpecificity)
   );
 }
 
@@ -465,15 +480,15 @@ function findOutsiderHeuristicFailure(params: {
   if (
     params.question.type === "MCQ" &&
     (params.highRigorRequested || params.assumedBackgroundLevel !== "novice") &&
-    (looksLikeLowDepthMcq(params.question) || mcqDistractorsLookWeak(params.question))
+    looksLikeLowDepthMcq(params.question)
   ) {
     return {
       status: "FAILED",
       reason:
         params.assumedBackgroundLevel === "specialist"
-          ? "MCQ is too field-general for a specialist-style source and does not require the specific material"
-          : "MCQ is too general or weakly discriminative to require the cited source",
-      failureCodes: ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"],
+          ? "MCQ proposition is too general for a specialist-style source and does not require the specific material"
+          : "MCQ proposition is too general to require the cited source detail",
+      failureCodes: ["LOW_EDUCATIONAL_VALUE"],
       confidence: "MEDIUM"
     };
   }

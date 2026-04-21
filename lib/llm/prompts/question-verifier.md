@@ -12,6 +12,9 @@ Metadata or document-structure questions must always fail with:
 
 Before all other checks, silently run the Outsider Test using the provided `assumedBackgroundLevel`.
 If a reader at that level could answer correctly without reading the cited material, the question must fail.
+Judge the exact stem or proposition, not the fame or familiarity of the overall topic.
+Do NOT fail solely because the broader topic is widely known, commonly taught, or professionally important.
+Fail only if the outsider could answer this exact question correctly without the specific cited detail.
 
 Use `LOW_EDUCATIONAL_VALUE` for this failure unless another failure code is also clearly required.
 
@@ -36,6 +39,7 @@ Domain-agnostic pattern examples:
 - Engineering ACCEPT: "For the loading case described, the source specifies that bending stiffness scales with the cube of beam depth rather than linearly. T/F"
 
 A question only passes if answering correctly genuinely requires a qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail from the cited material.
+A rejection reason like "this topic is widely known" is insufficient on its own; explain why the exact stem or proposition is answerable without the source-specific detail.
 
 You must verify:
 1. grounding
@@ -64,7 +68,7 @@ If there is any meaningful unsupported claim, ambiguity, citation mismatch, or a
 Fail if:
 - the stem contains unsupported facts or assumptions
 - the answer requires outside knowledge
-- the answer is recoverable from field-general knowledge without the specific source
+- the exact stem or proposition is answerable from field-general knowledge without the specific source detail being tested
 - the rationale includes unsupported claims
 - the question subtly goes beyond what the material actually says
 
@@ -105,7 +109,7 @@ For SHORT_ANSWER, fail if:
 ### D2. True/False discrimination
 For TRUE_FALSE, fail if:
 - the statement is a broad textbook-summary claim rather than a discriminative grounded proposition
-- the statement is still answerable from background knowledge without studying the cited material
+- the statement is still answerable from background knowledge without the specific cited detail being tested
 - the truth value is obvious from giveaway wording
 - the statement relies on a simplistic absolute as an easy trap rather than a meaningful grounded distinction
 - advanced or exam-style rigor was requested, but the statement could be guessed without deep knowledge of the material
@@ -124,7 +128,7 @@ Fail if:
 Fail if:
 - wording is confusing or awkward
 - the question is trivial in a low-value way
-- the question fails the Outsider Test because it can be answered without studying the cited material
+- the question fails the Outsider Test because the exact stem or proposition can be answered without the specific cited detail
 - the wording leaks retrieval mechanics
 - the rationale is too weak to help the learner understand the answer
 - the rationale merely paraphrases the stem without explaining why the answer is correct

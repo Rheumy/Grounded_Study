@@ -15,6 +15,7 @@ import { logger } from "@/lib/observability/logger";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 const MAX_RETRIES = 3;
+const OUTSIDER_RETRY_BONUS = 1;
 
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
@@ -106,6 +107,10 @@ function shouldRefreshRetrievalAfterVerifierFailure(params: {
     return true;
   }
 
+  if (isOutsiderStyleRejection(params)) {
+    return true;
+  }
+
   if (normalized.startsWith("verifier returned")) {
     return false;
   }
@@ -125,6 +130,31 @@ function shouldRefreshRetrievalAfterVerifierFailure(params: {
   }
 
   return true;
+}
+
+function isOutsiderStyleRejection(params: { reason: string; failureCodes?: string[] }) {
+  const normalized = params.reason.trim().toLowerCase();
+  const failureCodes = new Set(params.failureCodes ?? []);
+
+  if (!failureCodes.has("LOW_EDUCATIONAL_VALUE")) {
+    return false;
+  }
+
+  if (
+    /metadata|document structure|table of contents|author (?:name|qualification|affiliation|biography)|bibliograph|reference list|copyright|publisher|document formatting/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    /background knowledge|field[- ]general|general knowledge|headline|summary|telegraph|without reading|specific material|specific source|cited source|too basic|too general|widely known/.test(
+      normalized
+    ) ||
+    failureCodes.has("INVALID_TRUE_FALSE") ||
+    failureCodes.has("WEAK_DISTRACTORS")
+  );
 }
 
 function logTargetedVerifierRejection(params: {
@@ -178,7 +208,7 @@ function logTargetedVerifierRejection(params: {
 
   if (
     failureCodes.has("LOW_EDUCATIONAL_VALUE") &&
-    /(?:background knowledge|field[- ]general|general knowledge|headline|outsider|summary|telegraph|without reading)/.test(
+    /(?:background knowledge|field[- ]general|general knowledge|headline|outsider|summary|telegraph|without reading|widely known|too general)/.test(
       reason
     )
   ) {
@@ -300,8 +330,10 @@ export async function generateQuestions(params: {
     let retryMode: RetryMode = "initial_retrieval";
     let currentQuery = "";
     let currentChunks: RetrievalChunk[] = [];
+    let maxAttempts = MAX_RETRIES;
+    let outsiderRetryBonusGranted = false;
 
-    for (let attempt = 0; attempt < MAX_RETRIES && !saved; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts && !saved; attempt += 1) {
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
         const retrievalStartedAt = Date.now();
         logger.info(
@@ -470,6 +502,10 @@ export async function generateQuestions(params: {
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;
+        const outsiderStyleRejection = isOutsiderStyleRejection({
+          reason: verifier.reason,
+          failureCodes: verifier.failureCodes
+        });
         logTargetedVerifierRejection({
           ownerId: params.ownerId,
           questionType,
@@ -490,12 +526,28 @@ export async function generateQuestions(params: {
             "Verifier rejected low-educational-value question"
           );
         }
-        retryMode = shouldRefreshRetrievalAfterVerifierFailure({
-          reason: verifier.reason,
-          failureCodes: verifier.failureCodes
-        })
-          ? "refreshed_retrieval"
-          : "same_chunks";
+        if (outsiderStyleRejection && !outsiderRetryBonusGranted) {
+          maxAttempts = MAX_RETRIES + OUTSIDER_RETRY_BONUS;
+          outsiderRetryBonusGranted = true;
+          logger.info(
+            {
+              ownerId: params.ownerId,
+              questionType,
+              attempt: attempt + 1,
+              maxAttempts,
+              reason: verifier.reason
+            },
+            "Granting one additional retrieval attempt for outsider-style rejection"
+          );
+        }
+        retryMode =
+          outsiderStyleRejection ||
+          shouldRefreshRetrievalAfterVerifierFailure({
+            reason: verifier.reason,
+            failureCodes: verifier.failureCodes
+          })
+            ? "refreshed_retrieval"
+            : "same_chunks";
         continue;
       }
 

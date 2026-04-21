@@ -174,4 +174,51 @@ describe("generation retries", () => {
     );
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
+
+  it("grants one additional refreshed attempt for outsider-style verifier rejections", async () => {
+    (retrieveChunks as any)
+      .mockResolvedValueOnce([chunkA])
+      .mockResolvedValueOnce([chunkB])
+      .mockResolvedValueOnce([chunkA])
+      .mockResolvedValueOnce([chunkB]);
+    (generateQuestion as any)
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-a", { type: "TRUE_FALSE", options: ["True", "False"], answer: "True" }))
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-b", { type: "TRUE_FALSE", options: ["True", "False"], answer: "True" }))
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-a", { type: "TRUE_FALSE", options: ["True", "False"], answer: "True" }))
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-b", { type: "TRUE_FALSE", options: ["True", "False"], answer: "True" }));
+    (verifyQuestion as any)
+      .mockResolvedValueOnce({
+        status: "FAILED",
+        reason:
+          "True/false statement reads like a field-general summary that could be answered without studying the cited source",
+        failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+      })
+      .mockResolvedValueOnce({
+        status: "FAILED",
+        reason:
+          "True/false statement reads like a field-general summary that could be answered without studying the cited source",
+        failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+      })
+      .mockResolvedValueOnce({
+        status: "FAILED",
+        reason:
+          "True/false statement reads like a field-general summary that could be answered without studying the cited source",
+        failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+      })
+      .mockResolvedValueOnce({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 3,
+      count: 1,
+      typeMix: { TRUE_FALSE: 1 }
+    });
+
+    expect(retrieveChunks).toHaveBeenCalledTimes(4);
+    expect(generateQuestion).toHaveBeenCalledTimes(4);
+    expect(verifyQuestion).toHaveBeenCalledTimes(4);
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
 });
