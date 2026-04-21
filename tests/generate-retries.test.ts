@@ -221,4 +221,52 @@ describe("generation retries", () => {
     expect(verifyQuestion).toHaveBeenCalledTimes(4);
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
+
+  it("switches to a narrow source-specific retry angle after outsider-style rejection", async () => {
+    const detailedChunk = {
+      ...chunkA,
+      content:
+        "Compared with the 50 mg regimen, the 100 mg regimen achieved week 12 response in 68% versus 42% of patients."
+    };
+
+    (retrieveChunks as any).mockResolvedValueOnce([detailedChunk]).mockResolvedValueOnce([chunkB]);
+    (generateQuestion as any)
+      .mockResolvedValueOnce(
+        buildGeneratedQuestion("chunk-a", {
+          type: "TRUE_FALSE",
+          options: ["True", "False"],
+          answer: "True"
+        })
+      )
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-b"));
+    (verifyQuestion as any)
+      .mockResolvedValueOnce({
+        status: "FAILED",
+        reason:
+          "The proposition can be answered correctly based on general knowledge without needing specific details from the cited material.",
+        failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+      })
+      .mockResolvedValueOnce({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 3,
+      count: 1,
+      typeMix: { TRUE_FALSE: 1 }
+    });
+
+    expect((retrieveChunks as any).mock.calls[0][0].query).toBe("Seed text for retrieval");
+    expect((retrieveChunks as any).mock.calls[1][0].query).toContain("week 12 response");
+    expect((retrieveChunks as any).mock.calls[1][0].query).not.toBe(
+      (retrieveChunks as any).mock.calls[0][0].query
+    );
+    expect((generateQuestion as any).mock.calls[1][0].retryContext).toEqual({
+      strategy: "narrow_source_specific",
+      previousFailureReason:
+        "The proposition can be answered correctly based on general knowledge without needing specific details from the cited material."
+    });
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
 });

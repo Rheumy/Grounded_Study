@@ -137,6 +137,47 @@ function buildOutsiderTestContext(styleProfile: unknown): string {
   ].join("\n");
 }
 
+function buildRetryGuidance(params: {
+  retryContext?:
+    | {
+        strategy: "default" | "narrow_source_specific";
+        previousFailureReason?: string | null;
+      }
+    | undefined;
+  requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+}): string | null {
+  if (!params.retryContext || params.retryContext.strategy !== "narrow_source_specific") {
+    return null;
+  }
+
+  const lines = [
+    "Retry guidance:",
+    "- A previous attempt was rejected because it was too general or could be answered without the specific cited detail.",
+    "- Do not ask about the topic at headline level.",
+    "- Pivot to a narrower proposition that depends on a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, or condition if the source supports it."
+  ];
+
+  if (params.retryContext.previousFailureReason) {
+    lines.push(`- Previous failure reason: ${params.retryContext.previousFailureReason}`);
+  }
+
+  if (params.requestedType === "MCQ") {
+    lines.push(
+      "- Make the keyed answer win because of that narrower source-specific detail, not because it is the only obviously relevant option."
+    );
+  } else if (params.requestedType === "TRUE_FALSE") {
+    lines.push(
+      "- Write a source-specific proposition whose truth value turns on that narrower detail, not on a broad summary claim."
+    );
+  } else {
+    lines.push(
+      "- Ask for a concise explanation or implication that clearly depends on the narrower cited detail."
+    );
+  }
+
+  return lines.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Option normalisation
 // The model sometimes returns options as objects with a "text", "value", or
@@ -388,6 +429,12 @@ export async function generateQuestion(params: {
   difficulty: number;
   questionType?: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   chunks: RetrievalChunk[];
+  retryContext?:
+    | {
+        strategy: "default" | "narrow_source_specific";
+        previousFailureReason?: string | null;
+      }
+    | undefined;
   userId?: string | null;
   documentId?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -415,6 +462,7 @@ export async function generateQuestion(params: {
     buildHighRigorGuidance(requestedType, params.styleProfile)
       ? `Exam-discriminative guidance:\n${buildHighRigorGuidance(requestedType, params.styleProfile)}`
       : null,
+    buildRetryGuidance({ retryContext: params.retryContext, requestedType }),
     explicitStyleDirectives ? `Explicit style directives:\n${explicitStyleDirectives}` : null,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,
     `\nExcerpts:\n${chunksBlock}`

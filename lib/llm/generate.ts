@@ -19,6 +19,7 @@ const OUTSIDER_RETRY_BONUS = 1;
 
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
+type RetryStrategy = "default" | "narrow_source_specific";
 
 function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
@@ -30,35 +31,128 @@ export type TypeMix = {
   TRUE_FALSE?: number;
 };
 
-async function getRandomChunkSnippet(documentIds: string[]) {
-  if (documentIds.length === 0) return "core concepts";
-  const ids = Prisma.join(documentIds);
-  const chunks = await prisma.$queryRaw<RetrievalChunk[]>`
-    SELECT "id", "documentId", "content", "page", "chunkIndex"
-    FROM "DocumentChunk"
-    WHERE "documentId" IN (${ids})
-    ORDER BY random()
-    LIMIT 12
-  `;
+function countMatches(value: string, pattern: RegExp): number {
+  const matches = value.match(pattern);
+  return matches ? matches.length : 0;
+}
+
+function normalizeSpace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function getSourceSpecificSignalScore(content: string): number {
+  const normalized = normalizeSpace(content).toLowerCase();
+
+  if (!normalized || getNonEducationalChunkReason(content)) {
+    return 0;
+  }
+
+  return (
+    countMatches(
+      normalized,
+      /\b(?:although|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|rather than|relative to|unless|versus|when|within|without)\b/g
+    ) * 2 +
+    countMatches(
+      normalized,
+      /\b(?:caveat|condition|contraindication|criteria|criterion|exception|implication|threshold|timing)\b/g
+    ) * 2 +
+    countMatches(normalized, /\b\d+(?:\.\d+)?(?:%|x)?\b/g)
+  );
+}
+
+function extractQuerySnippet(content: string, strategy: RetryStrategy): string {
+  const collapsed = normalizeSpace(content);
+  if (!collapsed) {
+    return "core concepts and key principles";
+  }
+
+  if (strategy === "default") {
+    return collapsed.slice(0, 200);
+  }
+
+  const normalized = collapsed.toLowerCase();
+  const focusPattern =
+    /\b(?:although|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|rather than|relative to|unless|versus|vs\.?|when|within|without|caveat|condition|contraindication|criteria|criterion|exception|implication|threshold|timing|\d+(?:\.\d+)?(?:%|x)?)\b/;
+  const match = focusPattern.exec(normalized);
+
+  if (!match) {
+    return collapsed.slice(0, 220);
+  }
+
+  const start = Math.max(0, match.index - 90);
+  return collapsed.slice(start, start + 220);
+}
+
+function buildNarrowRetryQuery(sourceChunks: RetrievalChunk[]): string | null {
+  if (sourceChunks.length === 0) {
+    return null;
+  }
+
+  const bestChunk = sourceChunks
+    .filter((chunk) => !getNonEducationalChunkReason(chunk.content))
+    .map((chunk) => ({
+      chunk,
+      score: getSourceSpecificSignalScore(chunk.content)
+    }))
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!bestChunk || bestChunk.score <= 0) {
+    return null;
+  }
+
+  return extractQuerySnippet(bestChunk.chunk.content, "narrow_source_specific");
+}
+
+async function getRandomChunkSnippet(params: {
+  documentIds: string[];
+  strategy?: RetryStrategy;
+  excludeChunkIds?: string[];
+}) {
+  if (params.documentIds.length === 0) return "core concepts";
+  const strategy = params.strategy ?? "default";
+  const ids = Prisma.join(params.documentIds);
+  const excludeChunkIds = params.excludeChunkIds ?? [];
+  const sampleLimit = strategy === "narrow_source_specific" ? 24 : 12;
+  const chunks =
+    excludeChunkIds.length > 0
+      ? await prisma.$queryRaw<RetrievalChunk[]>`
+          SELECT "id", "documentId", "content", "page", "chunkIndex"
+          FROM "DocumentChunk"
+          WHERE "documentId" IN (${ids}) AND "id" NOT IN (${Prisma.join(excludeChunkIds)})
+          ORDER BY random()
+          LIMIT ${sampleLimit}
+        `
+      : await prisma.$queryRaw<RetrievalChunk[]>`
+          SELECT "id", "documentId", "content", "page", "chunkIndex"
+          FROM "DocumentChunk"
+          WHERE "documentId" IN (${ids})
+          ORDER BY random()
+          LIMIT ${sampleLimit}
+        `;
   const chunk = chunks
     .filter((candidate) => !getNonEducationalChunkReason(candidate.content))
     .map((candidate) => ({
       chunk: candidate,
-      score: getEducationalChunkScore(candidate.content)
+      score:
+        getEducationalChunkScore(candidate.content) +
+        (strategy === "narrow_source_specific"
+          ? getSourceSpecificSignalScore(candidate.content) * 3
+          : 0)
     }))
     .sort((a, b) => b.score - a.score)[0]?.chunk;
 
   if (!chunk && chunks.length > 0) {
     logger.info(
       {
-        documentCount: documentIds.length,
-        sampledChunkCount: chunks.length
+        documentCount: params.documentIds.length,
+        sampledChunkCount: chunks.length,
+        strategy
       },
       "Random retrieval seed fell back because sampled chunks looked non-educational"
     );
   }
 
-  return chunk?.content?.slice(0, 200) ?? "core concepts and key principles";
+  return chunk ? extractQuerySnippet(chunk.content, strategy) : "core concepts and key principles";
 }
 
 function toStyleProfileObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
@@ -328,24 +422,41 @@ export async function generateQuestions(params: {
     let saved = false;
     let reason = "";
     let retryMode: RetryMode = "initial_retrieval";
+    let retryStrategy: RetryStrategy = "default";
     let currentQuery = "";
     let currentChunks: RetrievalChunk[] = [];
     let maxAttempts = MAX_RETRIES;
     let outsiderRetryBonusGranted = false;
+    let narrowRetryReason: string | null = null;
+    let narrowRetrySourceChunks: RetrievalChunk[] = [];
 
     for (let attempt = 0; attempt < maxAttempts && !saved; attempt += 1) {
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
         const retrievalStartedAt = Date.now();
+        const focusedRetryQuery =
+          retryStrategy === "narrow_source_specific"
+            ? buildNarrowRetryQuery(narrowRetrySourceChunks)
+            : null;
         logger.info(
           {
             ownerId: params.ownerId,
             questionType,
             attempt: attempt + 1,
-            retryMode
+            retryMode,
+            retryStrategy
           },
           "Question retrieval started"
         );
-        currentQuery = await getRandomChunkSnippet(params.documentIds);
+        currentQuery =
+          focusedRetryQuery ??
+          (await getRandomChunkSnippet({
+            documentIds: params.documentIds,
+            strategy: retryStrategy,
+            excludeChunkIds:
+              retryStrategy === "narrow_source_specific"
+                ? narrowRetrySourceChunks.map((chunk) => chunk.id)
+                : []
+          }));
         currentChunks = await retrieveChunks({
           query: currentQuery,
           documentIds: params.documentIds,
@@ -358,6 +469,8 @@ export async function generateQuestions(params: {
             questionType,
             attempt: attempt + 1,
             retryMode,
+            retryStrategy,
+            usedFocusedRetryQuery: Boolean(focusedRetryQuery),
             chunkCount: currentChunks.length,
             phaseDurationMs: durationMs(retrievalStartedAt)
           },
@@ -366,14 +479,15 @@ export async function generateQuestions(params: {
       }
 
       logger.info(
-        {
-          ownerId: params.ownerId,
-          questionType,
-          attempt: attempt + 1,
-          retryMode,
-          chunkCount: currentChunks.length
-        },
-        "Generation attempt started"
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            retryMode,
+            retryStrategy,
+            chunkCount: currentChunks.length
+          },
+          "Generation attempt started"
       );
 
       if (currentChunks.length === 0) {
@@ -400,12 +514,20 @@ export async function generateQuestions(params: {
           difficulty: params.difficulty,
           questionType,
           chunks: currentChunks,
+          retryContext:
+            retryStrategy === "narrow_source_specific"
+              ? {
+                  strategy: retryStrategy,
+                  previousFailureReason: narrowRetryReason
+                }
+              : undefined,
           userId: params.ownerId,
           documentId: params.documentIds.length === 1 ? params.documentIds[0] : null,
           metadata: {
             attempt: attempt + 1,
             requestedCount: params.count,
-            styleProfileId: params.styleProfileId
+            styleProfileId: params.styleProfileId,
+            retryStrategy
           }
         });
         logger.info(
@@ -526,6 +648,22 @@ export async function generateQuestions(params: {
             "Verifier rejected low-educational-value question"
           );
         }
+        if (outsiderStyleRejection) {
+          retryStrategy = "narrow_source_specific";
+          narrowRetryReason = verifier.reason;
+          narrowRetrySourceChunks = [...currentChunks];
+          logger.info(
+            {
+              ownerId: params.ownerId,
+              questionType,
+              attempt: attempt + 1,
+              reason: verifier.reason,
+              retryMode: "refreshed_retrieval",
+              retryStrategy
+            },
+            "Switching retry strategy to narrow, source-specific regeneration"
+          );
+        }
         if (outsiderStyleRejection && !outsiderRetryBonusGranted) {
           maxAttempts = MAX_RETRIES + OUTSIDER_RETRY_BONUS;
           outsiderRetryBonusGranted = true;
@@ -535,7 +673,8 @@ export async function generateQuestions(params: {
               questionType,
               attempt: attempt + 1,
               maxAttempts,
-              reason: verifier.reason
+              reason: verifier.reason,
+              retryStrategy
             },
             "Granting one additional retrieval attempt for outsider-style rejection"
           );

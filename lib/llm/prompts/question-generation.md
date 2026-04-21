@@ -171,6 +171,9 @@ The style profile is guidance, not permission to violate evidence support or sys
 
 If style guidance conflicts with evidence quality, choose the more educationally sound and well-supported question.
 
+If retry guidance says a previous attempt was too general, you must pivot to a narrower, source-dependent claim rather than retrying the same topic at headline level.
+In that case, prefer a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, or condition that is explicitly supported by the material.
+
 If the style profile or explicit user instructions ask for advanced, scientific, technical, fellowship-level, board-style, or exam-style questions, strongly prefer questions that test:
 - mechanisms
 - comparisons
