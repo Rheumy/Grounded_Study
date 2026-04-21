@@ -3,6 +3,11 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { logger } from "@/lib/observability/logger";
 import type { GeneratedQuestion } from "@/lib/llm/schemas/question";
+import {
+  describeOutsiderForBackgroundLevel,
+  normalizeAssumedBackgroundLevel,
+  type AssumedBackgroundLevel
+} from "@/lib/llm/schemas/style-profile";
 import { VerifierSchema, type FailureCode } from "@/lib/llm/schemas/verifier";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
@@ -267,6 +272,10 @@ function reasonSuggestsMetadataFailure(reason: string, failureCodes: string[]): 
 }
 
 function styleRequestsHighRigor(styleProfile: unknown): boolean {
+  if (getAssumedBackgroundLevel(styleProfile) === "specialist") {
+    return true;
+  }
+
   if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
     return false;
   }
@@ -285,6 +294,30 @@ function styleRequestsHighRigor(styleProfile: unknown): boolean {
   return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam[- ]style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\bspecialist\b|\btechnical\b/.test(
     signals
   );
+}
+
+function getAssumedBackgroundLevel(styleProfile: unknown): AssumedBackgroundLevel {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return "generalist";
+  }
+
+  return normalizeAssumedBackgroundLevel(
+    (styleProfile as Record<string, unknown>).assumedBackgroundLevel
+  );
+}
+
+function buildOutsiderChallengeContext(styleProfile: unknown): string {
+  const assumedBackgroundLevel = getAssumedBackgroundLevel(styleProfile);
+  const outsiderDefinition = describeOutsiderForBackgroundLevel(assumedBackgroundLevel);
+
+  return [
+    "Outsider Test pre-flight:",
+    `- assumedBackgroundLevel: ${assumedBackgroundLevel}`,
+    `- outsider: ${outsiderDefinition}`,
+    "- Before any other check, decide whether this outsider could answer correctly without reading the cited evidence.",
+    "- If yes, the question must fail with LOW_EDUCATIONAL_VALUE.",
+    "- A passing question must depend on a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail."
+  ].join("\n");
 }
 
 function stemTelegraphsCorrectOption(question: GeneratedQuestion): boolean {
@@ -401,6 +434,53 @@ function looksLowDepthForHighRigor(question: GeneratedQuestion): boolean {
   return wordCount(stem) <= 10 && wordCount(rationale) <= 24 && !hasReasoningSignal(normalized);
 }
 
+function findOutsiderHeuristicFailure(params: {
+  question: GeneratedQuestion;
+  assumedBackgroundLevel: AssumedBackgroundLevel;
+  highRigorRequested: boolean;
+}): VerifierResult | null {
+  if (params.question.type === "TRUE_FALSE" && looksLikeLowDepthTrueFalse(params.question)) {
+    const reason =
+      params.assumedBackgroundLevel === "novice"
+        ? "True/false statement is too broad or telegraphed to require the cited source"
+        : "True/false statement reads like a field-general summary that could be answered without studying the cited source";
+
+    return {
+      status: "FAILED",
+      reason,
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      confidence: "MEDIUM"
+    };
+  }
+
+  if (params.question.type === "MCQ" && stemTelegraphsCorrectOption(params.question)) {
+    return {
+      status: "FAILED",
+      reason: "MCQ stem telegraphs the answer instead of requiring grounded use of the source",
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"],
+      confidence: "MEDIUM"
+    };
+  }
+
+  if (
+    params.question.type === "MCQ" &&
+    (params.highRigorRequested || params.assumedBackgroundLevel !== "novice") &&
+    (looksLikeLowDepthMcq(params.question) || mcqDistractorsLookWeak(params.question))
+  ) {
+    return {
+      status: "FAILED",
+      reason:
+        params.assumedBackgroundLevel === "specialist"
+          ? "MCQ is too field-general for a specialist-style source and does not require the specific material"
+          : "MCQ is too general or weakly discriminative to require the cited source",
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"],
+      confidence: "MEDIUM"
+    };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Normalise the model's raw verifier response.
 // The prompt asks for PASSED/FAILED but the model sometimes returns PASS/FAIL,
@@ -478,8 +558,10 @@ export async function verifyQuestion(params: {
     .join("\n\n");
   const mcqChallengeContext = buildMcqChallengeContext(params.question);
   const trueFalseChallengeContext = buildTrueFalseChallengeContext(params.question);
+  const outsiderChallengeContext = buildOutsiderChallengeContext(params.styleProfile);
 
   const user = [
+    outsiderChallengeContext,
     `Question JSON:\n${JSON.stringify(params.question)}`,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile ?? {})}`,
     mcqChallengeContext,
@@ -510,6 +592,7 @@ export async function verifyQuestion(params: {
       questionType: params.question.type,
       difficulty: params.question.difficulty,
       chunkCount: params.chunks.length,
+      assumedBackgroundLevel: getAssumedBackgroundLevel(params.styleProfile),
       ...(params.metadata ?? {})
     },
     modelOverride: MODEL
@@ -546,6 +629,7 @@ export async function verifyQuestion(params: {
     result = parsedResult.data;
   }
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
+  const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
 
   if (
     looksLikeMetadataQuestion(params.question) ||
@@ -574,6 +658,26 @@ export async function verifyQuestion(params: {
         "LOW_EDUCATIONAL_VALUE"
       ]),
       confidence: result.confidence ?? "HIGH"
+    };
+  }
+
+  const outsiderHeuristicFailure = findOutsiderHeuristicFailure({
+    question: params.question,
+    assumedBackgroundLevel,
+    highRigorRequested
+  });
+  if (outsiderHeuristicFailure) {
+    result = {
+      status: "FAILED",
+      reason:
+        result.status === "FAILED" && result.reason !== "No reason provided"
+          ? result.reason
+          : outsiderHeuristicFailure.reason,
+      failureCodes: ensureFailureCodes(
+        result.failureCodes ?? [],
+        outsiderHeuristicFailure.failureCodes ?? ["LOW_EDUCATIONAL_VALUE"]
+      ),
+      confidence: result.confidence ?? outsiderHeuristicFailure.confidence ?? "MEDIUM"
     };
   }
 

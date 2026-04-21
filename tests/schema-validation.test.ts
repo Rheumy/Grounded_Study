@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { StyleProfileSchema } from "@/lib/llm/schemas/style-profile";
+import {
+  StyleProfileSchema,
+  normalizeAssumedBackgroundLevel
+} from "@/lib/llm/schemas/style-profile";
 import { GeneratedQuestionSchema } from "@/lib/llm/schemas/question";
 
 // Import the internal normalisation helpers via the module.
@@ -37,7 +40,9 @@ const questionSample = {
 
 describe("schema validation", () => {
   it("accepts valid style profile", () => {
-    expect(StyleProfileSchema.parse(styleSample)).toBeTruthy();
+    const parsed = StyleProfileSchema.parse(styleSample);
+    expect(parsed).toBeTruthy();
+    expect(parsed.assumedBackgroundLevel).toBe("generalist");
   });
 
   it("accepts valid question", () => {
@@ -81,6 +86,14 @@ describe("style profile normalization edge cases", () => {
         "5": "expert"
       }
     };
-    expect(StyleProfileSchema.parse(minimal)).toBeTruthy();
+    const parsed = StyleProfileSchema.parse(minimal);
+    expect(parsed).toBeTruthy();
+    expect(parsed.assumedBackgroundLevel).toBe("generalist");
+  });
+
+  it("normalizes common assumedBackgroundLevel aliases", () => {
+    expect(normalizeAssumedBackgroundLevel("expert")).toBe("specialist");
+    expect(normalizeAssumedBackgroundLevel("introductory")).toBe("novice");
+    expect(normalizeAssumedBackgroundLevel("unknown")).toBe("generalist");
   });
 });

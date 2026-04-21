@@ -2,6 +2,11 @@ import fs from "fs/promises";
 import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { GeneratedQuestionSchema, type GeneratedQuestion } from "@/lib/llm/schemas/question";
+import {
+  describeOutsiderForBackgroundLevel,
+  normalizeAssumedBackgroundLevel,
+  type AssumedBackgroundLevel
+} from "@/lib/llm/schemas/style-profile";
 import { logger } from "@/lib/observability/logger";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
@@ -62,7 +67,21 @@ function collectStyleSignals(styleProfile: unknown): string {
     .toLowerCase();
 }
 
+function getAssumedBackgroundLevel(styleProfile: unknown): AssumedBackgroundLevel {
+  if (!styleProfile || typeof styleProfile !== "object" || Array.isArray(styleProfile)) {
+    return "generalist";
+  }
+
+  return normalizeAssumedBackgroundLevel(
+    (styleProfile as Record<string, unknown>).assumedBackgroundLevel
+  );
+}
+
 function styleRequestsHighRigor(styleProfile: unknown): boolean {
+  if (getAssumedBackgroundLevel(styleProfile) === "specialist") {
+    return true;
+  }
+
   const signals = collectStyleSignals(styleProfile);
   return /\badvanced\b|\bapplied\b|\bboard-style\b|\bclinical\b|\bdiscriminat|\bexam[- ]style\b|\bfellowship\b|\bhigh[- ]level\b|\bmechanism\b|\bnuanced\b|\breasoning\b|\bscientific\b|\bspecialist\b|\btechnical\b/.test(
     signals
@@ -101,6 +120,19 @@ function buildHighRigorGuidance(
   }
 
   return lines.map((line) => `- ${line}`).join("\n");
+}
+
+function buildOutsiderTestContext(styleProfile: unknown): string {
+  const assumedBackgroundLevel = getAssumedBackgroundLevel(styleProfile);
+  const outsiderDefinition = describeOutsiderForBackgroundLevel(assumedBackgroundLevel);
+
+  return [
+    "Outsider Test calibration:",
+    `- assumedBackgroundLevel: ${assumedBackgroundLevel}`,
+    `- outsider: ${outsiderDefinition}`,
+    "- A passing question must require a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail.",
+    "- If this outsider could answer from the stem wording or field-general knowledge without studying the cited material, return INSUFFICIENT_EVIDENCE."
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -368,11 +400,13 @@ export async function generateQuestion(params: {
   const requestedType = params.questionType ?? "MCQ";
   const difficultyDescriptor = getDifficultyDescriptor(params.styleProfile, params.difficulty);
   const explicitStyleDirectives = getExplicitStyleDirectives(params.styleProfile);
+  const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
 
   const user = [
     `Question type: ${requestedType}`,
     `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
+    buildOutsiderTestContext(params.styleProfile),
     highRigorRequested
       ? "High-rigor style requested: yes — prefer applied, discriminative, reasoning-based questions when supported."
       : null,
@@ -409,6 +443,7 @@ export async function generateQuestion(params: {
       difficulty: params.difficulty,
       questionType: requestedType,
       chunkCount: params.chunks.length,
+      assumedBackgroundLevel,
       hasStyleProfile: Boolean(params.styleProfile && Object.keys(params.styleProfile as object).length > 0),
       ...(params.metadata ?? {})
     },

@@ -21,7 +21,9 @@ vi.mock("@/lib/llm/verifier/verifier", () => ({
 }));
 
 vi.mock("@/lib/retrieval/retrieve", () => ({
-  retrieveChunks: vi.fn()
+  retrieveChunks: vi.fn(),
+  getEducationalChunkScore: vi.fn(() => 1),
+  getNonEducationalChunkReason: vi.fn(() => null)
 }));
 
 vi.mock("@/lib/feedback/user-facing", () => ({
@@ -85,6 +87,7 @@ describe("generation retries", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (prisma.$queryRaw as any).mockResolvedValue([seedChunk]);
+    (prisma.styleProfile.findFirst as any).mockResolvedValue(null);
     (prisma.question.create as any).mockResolvedValue({ id: "question-1" });
   });
 
@@ -107,6 +110,12 @@ describe("generation retries", () => {
     expect(generateQuestion).toHaveBeenCalledTimes(2);
     expect((generateQuestion as any).mock.calls[0][0].chunks).toBe(
       (generateQuestion as any).mock.calls[1][0].chunks
+    );
+    expect((generateQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
+      "generalist"
+    );
+    expect((verifyQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
+      "generalist"
     );
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
@@ -131,6 +140,37 @@ describe("generation retries", () => {
     expect(retrieveChunks).toHaveBeenCalledTimes(2);
     expect((generateQuestion as any).mock.calls[0][0].chunks).not.toBe(
       (generateQuestion as any).mock.calls[1][0].chunks
+    );
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("normalizes stored assumedBackgroundLevel before passing it to generation and verification", async () => {
+    (prisma.styleProfile.findFirst as any).mockResolvedValue({
+      id: "profile-1",
+      name: "Specialist profile",
+      schemaJson: {
+        questionTypeDistribution: { MCQ: 1, SHORT_ANSWER: 0, TRUE_FALSE: 0 },
+        assumedBackgroundLevel: "expert"
+      },
+      instructionsText: "Fellowship-style questions"
+    });
+    (retrieveChunks as any).mockResolvedValue([chunkA]);
+    (generateQuestion as any).mockResolvedValue(buildGeneratedQuestion("chunk-a"));
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: "profile-1",
+      difficulty: 3,
+      count: 1
+    });
+
+    expect((generateQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
+      "specialist"
+    );
+    expect((verifyQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
+      "specialist"
     );
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });

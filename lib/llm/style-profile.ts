@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
-import { StyleProfileSchema, type StyleProfile } from "@/lib/llm/schemas/style-profile";
+import {
+  StyleProfileSchema,
+  normalizeAssumedBackgroundLevel,
+  type StyleProfile
+} from "@/lib/llm/schemas/style-profile";
 import { logger } from "@/lib/observability/logger";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
@@ -199,6 +203,17 @@ function normalizeRawStyleProfile(raw: unknown, rawText: string): Record<string,
   }
 
   const questionTypeDistribution = normalizeDistribution(obj.questionTypeDistribution);
+  const assumedBackgroundLevel = normalizeAssumedBackgroundLevel(
+    obj.assumedBackgroundLevel ??
+      obj.assumed_background_level ??
+      obj.backgroundLevel ??
+      obj.background_level ??
+      obj.learnerBackgroundLevel ??
+      obj.learner_background_level ??
+      obj.audienceLevel ??
+      obj.audience_level ??
+      obj.background
+  );
   const stemLength = normalizeStemLength(obj.stemLength);
 
   const distractorStyle =
@@ -227,6 +242,7 @@ function normalizeRawStyleProfile(raw: unknown, rawText: string): Record<string,
 
   return {
     questionTypeDistribution,
+    assumedBackgroundLevel,
     stemLength,
     distractorStyle,
     explanationTone,

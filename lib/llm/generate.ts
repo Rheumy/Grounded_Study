@@ -1,6 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestion, type RetrievalChunk } from "@/lib/llm/question-generator";
+import {
+  normalizeAssumedBackgroundLevel,
+  type AssumedBackgroundLevel
+} from "@/lib/llm/schemas/style-profile";
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
 import {
   getEducationalChunkScore,
@@ -74,13 +78,15 @@ function buildGenerationStyleProfile(
     | null
 ): Record<string, unknown> {
   if (!styleProfile) {
-    return {};
+    return { assumedBackgroundLevel: "generalist" };
   }
 
   const schemaJson = toStyleProfileObject(styleProfile.schemaJson);
+  const assumedBackgroundLevel = normalizeAssumedBackgroundLevel(schemaJson.assumedBackgroundLevel);
 
   return {
     ...schemaJson,
+    assumedBackgroundLevel,
     profileName: styleProfile.name,
     ...(styleProfile.instructionsText
       ? {
@@ -127,6 +133,7 @@ function logTargetedVerifierRejection(params: {
   attempt: number;
   reason: string;
   failureCodes?: string[];
+  assumedBackgroundLevel: AssumedBackgroundLevel;
 }) {
   const failureCodes = new Set(params.failureCodes ?? []);
   const reason = params.reason.toLowerCase();
@@ -135,8 +142,12 @@ function logTargetedVerifierRejection(params: {
     questionType: params.questionType,
     attempt: params.attempt,
     failureCodes: [...failureCodes],
-    reason: params.reason
+    reason: params.reason,
+    assumedBackgroundLevel: params.assumedBackgroundLevel,
+    primaryFailureCode: params.failureCodes?.[0] ?? "UNKNOWN"
   };
+
+  logger.info(baseLog, "Verifier rejection bucket");
 
   if (
     failureCodes.has("UNSUPPORTED_ANSWER") ||
@@ -163,6 +174,15 @@ function logTargetedVerifierRejection(params: {
       failureCodes.has("AMBIGUOUS_QUESTION"))
   ) {
     logger.info(baseLog, "Verifier rejected unsupported comparative distinction");
+  }
+
+  if (
+    failureCodes.has("LOW_EDUCATIONAL_VALUE") &&
+    /(?:background knowledge|field[- ]general|general knowledge|headline|outsider|summary|telegraph|without reading)/.test(
+      reason
+    )
+  ) {
+    logger.info(baseLog, "Verifier rejected question that failed the outsider test");
   }
 }
 
@@ -265,6 +285,9 @@ export async function generateQuestions(params: {
     | null;
   const profileDistribution = profileSchema?.questionTypeDistribution ?? null;
   const generationStyleProfile = buildGenerationStyleProfile(styleProfile);
+  const assumedBackgroundLevel = normalizeAssumedBackgroundLevel(
+    generationStyleProfile.assumedBackgroundLevel
+  );
 
   const typeSlots = buildTypeSlots(params.count, params.typeMix ?? null, profileDistribution);
 
@@ -452,7 +475,8 @@ export async function generateQuestions(params: {
           questionType,
           attempt: attempt + 1,
           reason: verifier.reason,
-          failureCodes: verifier.failureCodes
+          failureCodes: verifier.failureCodes,
+          assumedBackgroundLevel
         });
         if (verifier.failureCodes?.includes("LOW_EDUCATIONAL_VALUE")) {
           logger.info(
@@ -460,7 +484,8 @@ export async function generateQuestions(params: {
               ownerId: params.ownerId,
               questionType,
               attempt: attempt + 1,
-              reason: verifier.reason
+              reason: verifier.reason,
+              assumedBackgroundLevel
             },
             "Verifier rejected low-educational-value question"
           );

@@ -1,11 +1,73 @@
 import { z } from "zod";
 
+export const AssumedBackgroundLevelSchema = z.enum(["novice", "generalist", "specialist"]);
+
+export type AssumedBackgroundLevel = z.infer<typeof AssumedBackgroundLevelSchema>;
+
+export function normalizeAssumedBackgroundLevel(value: unknown): AssumedBackgroundLevel {
+  if (typeof value !== "string") {
+    return "generalist";
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+  if (
+    normalized === "novice" ||
+    normalized === "beginner" ||
+    normalized === "entry_level" ||
+    normalized === "high_school" ||
+    normalized === "intro" ||
+    normalized === "introductory"
+  ) {
+    return "novice";
+  }
+
+  if (
+    normalized === "generalist" ||
+    normalized === "general" ||
+    normalized === "intermediate" ||
+    normalized === "professional" ||
+    normalized === "undergraduate"
+  ) {
+    return "generalist";
+  }
+
+  if (
+    normalized === "specialist" ||
+    normalized === "advanced" ||
+    normalized === "board_exam" ||
+    normalized === "board_style" ||
+    normalized === "expert" ||
+    normalized === "fellowship" ||
+    normalized === "postgraduate"
+  ) {
+    return "specialist";
+  }
+
+  return "generalist";
+}
+
+export function describeOutsiderForBackgroundLevel(
+  level: AssumedBackgroundLevel
+): string {
+  switch (level) {
+    case "novice":
+      return "any adult without relevant education";
+    case "specialist":
+      return "a generalist in the field who has not studied the specific source";
+    case "generalist":
+    default:
+      return "someone with general education in the field";
+  }
+}
+
 export const StyleProfileSchema = z.object({
   questionTypeDistribution: z.object({
     MCQ: z.number().min(0).max(1),
     SHORT_ANSWER: z.number().min(0).max(1),
     TRUE_FALSE: z.number().min(0).max(1)
   }),
+  assumedBackgroundLevel: AssumedBackgroundLevelSchema.default("generalist").catch("generalist"),
   stemLength: z
     .object({
       minWords: z.number().int().min(3).catch(8),

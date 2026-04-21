@@ -17,6 +17,24 @@ If samples contain only MCQs, set MCQ near 1.0 and others near 0.0. If mixed, re
 ### stemLength
 `minWords` and `maxWords` for question stems. Infer from samples. Default: `{ minWords: 8, maxWords: 30 }`.
 
+### assumedBackgroundLevel
+Set one of:
+- `"novice"`
+- `"generalist"`
+- `"specialist"`
+
+Extraction rules:
+- If samples look like high-school-level or intro-course material, use `"novice"`.
+- If samples look like undergraduate or general professional level, use `"generalist"`.
+- If samples look like postgraduate, fellowship, board-exam, advanced certification, or specialist-level material, use `"specialist"`.
+- If the user's text instructions mention exam level or credentialing level, use that signal.
+- Default to `"generalist"` when unclear.
+
+This field calibrates an outsider test used later in generation and verification:
+- `"novice"`: outsider = any adult without relevant education
+- `"generalist"`: outsider = someone with general education in the field
+- `"specialist"`: outsider = a generalist in the field who has not studied the specific source
+
 ### distractorStyle
 Short description of how wrong options are written in MCQ questions. Examples: "plausible near-misses", "common misconceptions", "opposite of correct", "technically correct but contextually wrong". Infer from samples or default to "plausible near-misses".
 If the user asks for advanced, specialist, scientific, clinical, fellowship-level, or exam-style questions, prefer a distractor style that preserves subtle but meaningful same-family alternatives rather than generic wrong answers.
@@ -49,4 +67,5 @@ If the user asks for advanced or specialist-style rigor, preserve signals about 
 - If evidence is missing for a field, use conservative defaults and note "inferred" in `notes`.
 - Weights in `questionTypeDistribution` should reflect actual sample distribution where evident.
 - `answerStyle` must always be populated — default to "one to two complete sentences" if unclear.
+- `assumedBackgroundLevel` must always be populated — default to `"generalist"` if unclear.
 - Preserve explicit user-stated exam level, technical depth, and conceptual emphasis. Do not wash those instructions out into generic defaults.
