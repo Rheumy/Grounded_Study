@@ -80,7 +80,7 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+      expect.arrayContaining(["OUTSIDER_SOLVABLE", "INVALID_TRUE_FALSE"])
     );
   });
 
@@ -283,7 +283,108 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "UNSUPPORTED_ANSWER"])
+      expect.arrayContaining(["OUTSIDER_SOLVABLE", "UNSUPPORTED_ANSWER"])
+    );
+    expect(result.failureCodes).not.toContain("LOW_EDUCATIONAL_VALUE");
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questionType: "MCQ",
+        failureCodes: expect.arrayContaining(["OUTSIDER_SOLVABLE", "UNSUPPORTED_ANSWER"]),
+        reason:
+          "The question can be answered by a generalist without requiring source-specific information."
+      }),
+      "Verifier rejected question that failed the outsider test"
+    );
+  });
+
+  it("keeps LOW_EDUCATIONAL_VALUE as a hard fail for genuine metadata-targeted questions", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem: "The reference list appears after the appendix in this document.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The source structure places the reference list after the appendix section.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "Appendix A is followed by the reference list",
+            page: 12
+          }
+        ],
+        difficulty: 1,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Appendix A is followed by the reference list and then the author biography section.",
+          page: 12
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(expect.arrayContaining(["LOW_EDUCATIONAL_VALUE"]));
+    expect(result.failureCodes).not.toContain("OUTSIDER_SOLVABLE");
+  });
+
+  it("fails when outsider-solvable signal co-occurs with LOW_EDUCATIONAL_VALUE", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "FAILED",
+              reason:
+                "The question can be answered based on general knowledge without requiring source-specific information.",
+              failureCodes: ["LOW_EDUCATIONAL_VALUE"],
+              confidence: "MEDIUM"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem: "The reference list appears after the appendix in this document.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The source structure places the reference list after the appendix section.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "Appendix A is followed by the reference list",
+            page: 12
+          }
+        ],
+        difficulty: 1,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Appendix A is followed by the reference list and then the author biography section.",
+          page: 12
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["OUTSIDER_SOLVABLE", "LOW_EDUCATIONAL_VALUE"])
     );
   });
 

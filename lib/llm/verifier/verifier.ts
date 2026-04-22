@@ -48,6 +48,7 @@ const OUTSIDER_SOFT_PASS_BLOCKING_CODES = new Set<FailureCode>([
   "MISSING_CITATIONS",
   "BAD_CITATION_LINKAGE",
   "RETRIEVAL_JARGON",
+  "LOW_EDUCATIONAL_VALUE",
   "INVALID_STRUCTURE"
 ]);
 
@@ -70,6 +71,10 @@ function ensureFailureCode(failureCodes: FailureCode[], code: FailureCode): Fail
 
 function ensureFailureCodes(failureCodes: FailureCode[], codes: FailureCode[]): FailureCode[] {
   return codes.reduce((acc, code) => ensureFailureCode(acc, code), failureCodes);
+}
+
+function removeFailureCode(failureCodes: FailureCode[], code: FailureCode): FailureCode[] {
+  return failureCodes.filter((failureCode) => failureCode !== code);
 }
 
 function countMatches(value: string, pattern: RegExp): number {
@@ -307,6 +312,7 @@ function reasonSuggestsOutsiderSignal(reason: string): boolean {
 
   return (
     /\bgeneralist\b|\boutsider\b/.test(normalized) ||
+    /general knowledge/.test(normalized) ||
     /without requiring source-specific information/.test(normalized) ||
     /without (?:reading|studying) the cited (?:evidence|source)/.test(normalized) ||
     /does not require the specific material/.test(normalized) ||
@@ -315,12 +321,26 @@ function reasonSuggestsOutsiderSignal(reason: string): boolean {
   );
 }
 
-function getOutsiderSignal(result: VerifierResult): VerifierResult | null {
-  return reasonSuggestsOutsiderSignal(result.reason) ? result : null;
+function assignOutsiderSignalCode(result: VerifierResult): VerifierResult {
+  if (!reasonSuggestsOutsiderSignal(result.reason)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    failureCodes: ensureFailureCode(
+      removeFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+      "OUTSIDER_SOLVABLE"
+    )
+  };
 }
 
 function hasOutsiderSoftPassBlockers(result: VerifierResult): boolean {
   return (result.failureCodes ?? []).some((code) => OUTSIDER_SOFT_PASS_BLOCKING_CODES.has(code));
+}
+
+function hasOutsiderSignal(result: VerifierResult): boolean {
+  return (result.failureCodes ?? []).includes("OUTSIDER_SOLVABLE");
 }
 
 function styleRequestsHighRigor(styleProfile: unknown): boolean {
@@ -519,7 +539,7 @@ function findOutsiderHeuristicFailure(params: {
     return {
       status: "FAILED",
       reason,
-      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      failureCodes: ["OUTSIDER_SOLVABLE", "INVALID_TRUE_FALSE"],
       confidence: "MEDIUM"
     };
   }
@@ -528,7 +548,7 @@ function findOutsiderHeuristicFailure(params: {
     return {
       status: "FAILED",
       reason: "MCQ stem telegraphs the answer instead of requiring grounded use of the source",
-      failureCodes: ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"],
+      failureCodes: ["OUTSIDER_SOLVABLE", "WEAK_DISTRACTORS"],
       confidence: "MEDIUM"
     };
   }
@@ -544,7 +564,7 @@ function findOutsiderHeuristicFailure(params: {
         params.assumedBackgroundLevel === "specialist"
           ? "MCQ proposition is too general for a specialist-style source and does not require the specific material"
           : "MCQ proposition is too general to require the cited source detail",
-      failureCodes: ["LOW_EDUCATIONAL_VALUE"],
+      failureCodes: ["OUTSIDER_SOLVABLE"],
       confidence: "MEDIUM"
     };
   }
@@ -699,20 +719,9 @@ export async function verifyQuestion(params: {
   } else {
     result = parsedResult.data;
   }
+  result = assignOutsiderSignalCode(result);
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
   const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
-  const modelOutsiderSignal = getOutsiderSignal(result);
-
-  if (modelOutsiderSignal) {
-    logger.info(
-      {
-        questionType: params.question.type,
-        failureCodes: modelOutsiderSignal.failureCodes ?? [],
-        reason: modelOutsiderSignal.reason
-      },
-      "Verifier outsider-test signal fired"
-    );
-  }
 
   const metadataFailure =
     looksLikeMetadataQuestion(params.question) ||
@@ -767,7 +776,7 @@ export async function verifyQuestion(params: {
           : outsiderHeuristicFailure.reason,
       failureCodes: ensureFailureCodes(
         result.failureCodes ?? [],
-        outsiderHeuristicFailure.failureCodes ?? ["LOW_EDUCATIONAL_VALUE"]
+        outsiderHeuristicFailure.failureCodes ?? ["OUTSIDER_SOLVABLE"]
       ),
       confidence: result.confidence ?? outsiderHeuristicFailure.confidence ?? "MEDIUM"
     };
@@ -791,27 +800,32 @@ export async function verifyQuestion(params: {
     };
   }
 
-  const outsiderSignal = getOutsiderSignal(result) ?? outsiderHeuristicFailure ?? modelOutsiderSignal;
-  if (
-    result.status === "FAILED" &&
-    outsiderSignal &&
-    !metadataFailure &&
-    !hasOutsiderSoftPassBlockers(result)
-  ) {
-    logger.info(
-      {
-        userId: params.userId ?? null,
-        questionType: params.question.type,
-        reason: result.reason
-      },
-      "Outsider-test signal fired but question passed other checks"
-    );
-    result = {
-      status: "PASSED",
-      reason: "Supported",
-      failureCodes: [],
-      confidence: result.confidence
-    };
+  if (result.status === "FAILED" && hasOutsiderSignal(result)) {
+    if (metadataFailure || hasOutsiderSoftPassBlockers(result)) {
+      logger.info(
+        {
+          questionType: params.question.type,
+          failureCodes: result.failureCodes ?? [],
+          reason: result.reason
+        },
+        "Verifier rejected question that failed the outsider test"
+      );
+    } else {
+      logger.info(
+        {
+          userId: params.userId ?? null,
+          questionType: params.question.type,
+          reason: result.reason
+        },
+        "Outsider-test signal fired but question passed other checks"
+      );
+      result = {
+        status: "PASSED",
+        reason: "Supported",
+        failureCodes: [],
+        confidence: result.confidence
+      };
+    }
   }
 
   logger.info(
