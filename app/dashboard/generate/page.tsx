@@ -35,8 +35,8 @@ export default async function GeneratePage() {
       <CardHeader>
         <CardTitle>Create your question bank</CardTitle>
         <CardDescription>
-          Create new questions from your uploaded study material. Saved Question Styles shape how
-          questions are written, while question type controls what this run generates.
+          Create new questions from your uploaded study material. Choose a saved Question Style to
+          shape wording, level, and the question mix for this run.
         </CardDescription>
       </CardHeader>
       <CardContent>

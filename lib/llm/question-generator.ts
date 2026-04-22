@@ -28,6 +28,65 @@ function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function countMatches(value: string, pattern: RegExp): number {
+  const matches = value.match(pattern);
+  return matches ? matches.length : 0;
+}
+
+function getSourceSpecificFocusScore(content: string): number {
+  const normalized = collapseWhitespace(content).toLowerCase();
+
+  if (!normalized) {
+    return 0;
+  }
+
+  return (
+    countMatches(
+      normalized,
+      /\b(?:after|although|before|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|only if|only when|prior to|rather than|relative to|subsequent|then|unless|versus|vs\.?|when|whereas|within|without)\b/g
+    ) * 2 +
+    countMatches(
+      normalized,
+      /\b(?:caveat|component|condition|contraindication|criteria|criterion|exception|implication|limitation|order|prerequisite|required|requirement|sequence|step|threshold|timing)\b/g
+    ) * 2 +
+    countMatches(normalized, /\b(?:first|second|third|final|initial|next)\b/g) +
+    countMatches(normalized, /\b\d+(?:\.\d+)?(?:%|x)?\b/g)
+  );
+}
+
+function extractSourceSpecificFocusSnippet(content: string): string | null {
+  const collapsed = collapseWhitespace(content);
+  if (!collapsed) {
+    return null;
+  }
+
+  const focusPattern =
+    /\b(?:after|although|before|caveat|compared with|compared to|component|condition|contraindication|criteria|criterion|exception|first|however|if|implication|initial|limitation|next|only if|only when|order|prerequisite|prior to|required|requirement|sequence|step|subsequent|then|threshold|timing|unless|versus|vs\.?|when|whereas|within|\d+(?:\.\d+)?(?:%|x)?)\b/i;
+  const match = focusPattern.exec(collapsed);
+
+  if (!match) {
+    return null;
+  }
+
+  const start = Math.max(0, match.index - 90);
+  return collapsed.slice(start, start + 220);
+}
+
+function buildRetryFocusCue(chunks: RetrievalChunk[]): string | null {
+  const bestChunk = chunks
+    .map((chunk) => ({
+      chunk,
+      score: getSourceSpecificFocusScore(chunk.content)
+    }))
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!bestChunk || bestChunk.score <= 0) {
+    return null;
+  }
+
+  return extractSourceSpecificFocusSnippet(bestChunk.chunk.content);
+}
+
 function stripWrappingQuotes(value: string): string {
   return value
     .replace(/^[\s"'`“”‘’]+/, "")
@@ -219,8 +278,44 @@ function buildOutsiderTestContext(styleProfile: unknown): string {
     "- A passing question must require a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail.",
     "- Judge the exact stem or proposition, not the fame or familiarity of the overall topic.",
     "- If this outsider could answer this exact stem or proposition correctly without the specific cited detail, return INSUFFICIENT_EVIDENCE.",
-    "- Do not reject solely because the broader topic is familiar, widely taught, or clinically important."
+    "- Do not reject solely because the broader topic is familiar, widely taught, or clinically important.",
+    '- Avoid overview stems such as "what is X", "what does X do", "role of X", "mechanism of X", or "how X works" unless the stem itself is narrowed by a source-specific detail.',
+    "- In generalist mode, a familiar topic is still acceptable only when the exact tested claim depends on the source-specific detail."
   ].join("\n");
+}
+
+function buildOverviewAvoidanceGuidance(params: {
+  requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+  styleProfile: unknown;
+}): string {
+  const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
+  const lines = [
+    "Anti-overview rule:",
+    "- Do not ask for a topic overview, headline summary, or field-general explanation.",
+    '- Avoid stems such as "what is X", "what does X do", "role of X", "mechanism of X", "why is X important", or "how X works" unless the stem itself includes a source-specific qualifier, comparison, threshold, condition, limitation, sequence detail, required component, or caveat.'
+  ];
+
+  if (assumedBackgroundLevel === "generalist") {
+    lines.push(
+      "- In generalist mode, the topic may be familiar, but the exact tested claim must still depend on a specific detail from the source."
+    );
+  }
+
+  if (params.requestedType === "MCQ") {
+    lines.push(
+      "- For MCQ, avoid asking which option best describes a topic in general; ask which option is supported only because of a narrower source-bound detail."
+    );
+  } else if (params.requestedType === "TRUE_FALSE") {
+    lines.push(
+      "- For TRUE_FALSE, avoid broad mechanism or role statements; use a proposition whose truth value turns on a source-specific qualifier, comparison, timing detail, condition, limitation, or caveat."
+    );
+  } else {
+    lines.push(
+      "- For SHORT_ANSWER, do not ask for a generic explanation of a familiar concept; ask for a precise distinction, implication, sequence detail, condition, or required component supported by the source."
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function buildRetryGuidance(params: {
@@ -231,6 +326,7 @@ function buildRetryGuidance(params: {
       }
     | undefined;
   requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+  chunks: RetrievalChunk[];
 }): string | null {
   if (!params.retryContext || params.retryContext.strategy !== "narrow_source_specific") {
     return null;
@@ -240,11 +336,17 @@ function buildRetryGuidance(params: {
     "Retry guidance:",
     "- A previous attempt was rejected because it was too general or could be answered without the specific cited detail.",
     "- Do not ask about the topic at headline level.",
-    "- Pivot to a narrower proposition that depends on a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, or condition if the source supports it."
+    '- Avoid overview stems such as "what is X", "what does X do", "role of X", "mechanism of X", "importance of X", or "how X works".',
+    "- Pivot to a narrower proposition that depends on a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, condition, limitation, sequence or order detail, or required component if the source supports it."
   ];
 
   if (params.retryContext.previousFailureReason) {
     lines.push(`- Previous failure reason: ${params.retryContext.previousFailureReason}`);
+  }
+
+  const focusCue = buildRetryFocusCue(params.chunks);
+  if (focusCue) {
+    lines.push(`- Prefer centering the next attempt on a detail like: ${focusCue}`);
   }
 
   if (params.requestedType === "MCQ") {
@@ -643,13 +745,14 @@ export async function generateQuestion(params: {
     `Question type: ${requestedType}`,
     `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
     buildOutsiderTestContext(params.styleProfile),
+    buildOverviewAvoidanceGuidance({ requestedType, styleProfile: params.styleProfile }),
     highRigorRequested
       ? "High-rigor style requested: yes — prefer applied, discriminative, reasoning-based questions when supported."
       : null,
     buildHighRigorGuidance(requestedType, params.styleProfile)
       ? `Exam-discriminative guidance:\n${buildHighRigorGuidance(requestedType, params.styleProfile)}`
       : null,
-    buildRetryGuidance({ retryContext: params.retryContext, requestedType }),
+    buildRetryGuidance({ retryContext: params.retryContext, requestedType, chunks: params.chunks }),
     explicitStyleDirectives ? `Explicit style directives:\n${explicitStyleDirectives}` : null,
     `Style profile JSON:\n${JSON.stringify(params.styleProfile)}`,
     `\nExcerpts:\n${chunksBlock}`

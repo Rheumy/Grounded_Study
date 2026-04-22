@@ -6,8 +6,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 type Doc = { id: string; title: string };
-type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
-type QuestionTypeMode = "SINGLE" | "MIXED";
 type Profile = {
   id: string;
   name: string;
@@ -64,11 +62,6 @@ export function GenerateForm({
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
   const [count, setCount] = useState(5);
-  const [questionTypeMode, setQuestionTypeMode] = useState<QuestionTypeMode>("SINGLE");
-  const [singleType, setSingleType] = useState<QuestionType>("MCQ");
-  const [mcqCount, setMcqCount] = useState(5);
-  const [shortAnswerCount, setShortAnswerCount] = useState(0);
-  const [trueFalseCount, setTrueFalseCount] = useState(0);
   const [selectedStyleProfileId, setSelectedStyleProfileId] = useState<string>("");
 
   const toggleDoc = (id: string) => {
@@ -77,12 +70,8 @@ export function GenerateForm({
     );
   };
 
-  const typeMixTotal = mcqCount + shortAnswerCount + trueFalseCount;
-  const typeMixMismatch = questionTypeMode === "MIXED" && typeMixTotal !== count;
-  const shortAnswerGuidanceVisible =
-    questionTypeMode === "SINGLE"
-      ? singleType === "SHORT_ANSWER"
-      : shortAnswerCount > 0;
+  const selectedProfile = profiles.find((profile) => profile.id === selectedStyleProfileId) ?? null;
+  const shortAnswerGuidanceVisible = (selectedProfile?.distribution?.SHORT_ANSWER ?? 0) > 0;
 
   const submit = async () => {
     setError(null);
@@ -90,15 +79,6 @@ export function GenerateForm({
     setLoading(true);
     setStatus("Your questions are being built from your study material.");
     try {
-      const typeMix =
-        questionTypeMode === "SINGLE"
-          ? {
-              MCQ: singleType === "MCQ" ? count : 0,
-              SHORT_ANSWER: singleType === "SHORT_ANSWER" ? count : 0,
-              TRUE_FALSE: singleType === "TRUE_FALSE" ? count : 0
-            }
-          : { MCQ: mcqCount, SHORT_ANSWER: shortAnswerCount, TRUE_FALSE: trueFalseCount };
-
       const response = await fetch("/api/questions/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,8 +86,7 @@ export function GenerateForm({
           documentIds: selectedDocs,
           styleProfileId: selectedStyleProfileId || null,
           difficulty,
-          count,
-          typeMix
+          count
         })
       });
 
@@ -143,7 +122,7 @@ export function GenerateForm({
     }
   };
 
-  const isDisabled = selectedDocs.length === 0 || loading || typeMixMismatch;
+  const isDisabled = selectedDocs.length === 0 || loading;
 
   return (
     <div className="space-y-4">
@@ -192,8 +171,8 @@ export function GenerateForm({
         <label className="text-sm font-medium text-ink">Question Style</label>
         <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
           <p className="text-xs text-ink/60">
-            Question Style shapes wording, depth, and explanation tone. Question type below controls
-            whether this run generates MCQ, True / False, or Short answer.
+            Choose a saved Question Style created from your own examples. It shapes wording, level,
+            and the question mix for this run. If you leave this blank, the default run creates MCQ only.
           </p>
           {profiles.length > 0 ? (
             <select
@@ -201,7 +180,7 @@ export function GenerateForm({
               value={selectedStyleProfileId}
               onChange={(event) => setSelectedStyleProfileId(event.target.value)}
             >
-              <option value="">No saved question style</option>
+              <option value="">Use default generation settings</option>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
                   {profile.name}
@@ -231,114 +210,21 @@ export function GenerateForm({
             const rawNextCount = Number(event.target.value);
             const nextCount = Math.min(maxRequestCount, Math.max(1, rawNextCount || 1));
             setCount(nextCount);
-
-            if (questionTypeMode === "MIXED" && shortAnswerCount === 0 && trueFalseCount === 0) {
-              setMcqCount(nextCount);
-            }
           }}
           className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
         />
         <p className="text-xs text-ink/55">You can create up to {maxRequestCount} questions in one run.</p>
       </div>
 
-      <div className="space-y-3 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-ink">Question type for this run</p>
-          <p className="text-xs text-ink/60">
-            This control decides which question types to generate right now.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant={questionTypeMode === "SINGLE" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setQuestionTypeMode("SINGLE")}
-          >
-            Single type
-          </Button>
-          <Button
-            type="button"
-            variant={questionTypeMode === "MIXED" ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setQuestionTypeMode("MIXED");
-              setMcqCount(count);
-              setShortAnswerCount(0);
-              setTrueFalseCount(0);
-            }}
-          >
-            Mixed types
-          </Button>
-        </div>
-
-        {questionTypeMode === "SINGLE" ? (
-          <div className="space-y-2">
-            <p className="text-xs text-ink/60">
-              Generate one question type only for this run.
-            </p>
-            <select
-              className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
-              value={singleType}
-              onChange={(event) => setSingleType(event.target.value as QuestionType)}
-            >
-              <option value="MCQ">MCQ</option>
-              <option value="TRUE_FALSE">True / False</option>
-              <option value="SHORT_ANSWER">Short answer</option>
-            </select>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-xs text-ink/60">
-              Choose the mix for this run. By default this starts as all MCQ.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <label className="space-y-1 text-xs text-ink/70">
-                <span>Multiple choice (MCQ)</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={count}
-                  value={mcqCount}
-                  onChange={(event) => setMcqCount(Math.max(0, Number(event.target.value)))}
-                  className="h-9 w-full rounded-md border border-ink/15 bg-white px-2 text-sm"
-                />
-              </label>
-              <label className="space-y-1 text-xs text-ink/70">
-                <span>Short answer</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={count}
-                  value={shortAnswerCount}
-                  onChange={(event) => setShortAnswerCount(Math.max(0, Number(event.target.value)))}
-                  className="h-9 w-full rounded-md border border-ink/15 bg-white px-2 text-sm"
-                />
-              </label>
-              <label className="space-y-1 text-xs text-ink/70">
-                <span>True / False</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={count}
-                  value={trueFalseCount}
-                  onChange={(event) => setTrueFalseCount(Math.max(0, Number(event.target.value)))}
-                  className="h-9 w-full rounded-md border border-ink/15 bg-white px-2 text-sm"
-                />
-              </label>
-            </div>
-            <p className={`text-xs ${typeMixMismatch ? "text-danger font-medium" : "text-ink/50"}`}>
-              Total: {typeMixTotal} / {count}
-              {typeMixMismatch ? " — total must match the number of questions" : ""}
-            </p>
-          </div>
-        )}
-
+      <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
         <p className="text-xs text-ink/55">
-          Question type mode controls the types generated in this run. Current MCQ generation uses
-          exactly 4 options.
+          Current MCQ generation uses exactly 4 options.
         </p>
+        {selectedProfile?.distribution ? (
+          <p className="text-xs text-ink/55">
+            This style decides the question mix for this run based on the saved profile.
+          </p>
+        ) : null}
         {shortAnswerGuidanceVisible ? (
           <p className="text-xs text-ink/55">
             Short-answer feedback is strongest when your materials or saved question style include model

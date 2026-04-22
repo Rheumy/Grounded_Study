@@ -67,7 +67,21 @@ A question passes only if answering it correctly genuinely requires the specific
 - a timing detail
 - a contextual distinction
 - a comparison
+- a condition
+- a limitation
+- a sequence or order detail
+- a required component
+- a caveat
 - an applied detail
+
+Headline or overview framing usually fails this test unless the stem itself is narrowed by a source-specific detail.
+Examples of risky overview framing:
+- "What is X?"
+- "What does X do?"
+- "What is the role of X?"
+- "What is the mechanism of X?"
+- "Why is X important?"
+- "How does X work?"
 
 Calibration:
 - `novice`: outsider = any adult without relevant education
@@ -125,6 +139,7 @@ Prefer:
 - diagnosis, management, indications, or contraindications when the material supports them
 - discriminative questions that separate superficial familiarity from precise understanding when advanced or exam-style rigor is requested
 - questions where the learner must notice a meaningful qualifier, exception, mechanism, timing detail, or contextual distinction that is clearly supported by the material
+- questions where the learner must identify a condition, limitation, sequence/order detail, required component, or caveat that is clearly supported by the material
 
 Avoid:
 - questions that depend on outside knowledge
@@ -136,6 +151,7 @@ Avoid:
 - black-and-white textbook summary statements when advanced or exam-style rigor was requested
 - simplistic true/false items that can be guessed from exam technique rather than grounded understanding
 - MCQs where the correct answer is the only option that is clearly relevant to the stem
+- broad overview stems such as "what is X", "what does X do", "role of X", "mechanism of X", "importance of X", or "how X works" when the answer would not require a source-specific detail
 
 Never write a question mainly about:
 - table of contents entries
@@ -172,7 +188,9 @@ The style profile is guidance, not permission to violate evidence support or sys
 If style guidance conflicts with evidence quality, choose the more educationally sound and well-supported question.
 
 If retry guidance says a previous attempt was too general, you must pivot to a narrower, source-dependent claim rather than retrying the same topic at headline level.
-In that case, prefer a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, or condition that is explicitly supported by the material.
+In that case, prefer a qualifier, exception, threshold, comparison, timing detail, contextual distinction, mechanism nuance, implication, criteria, caveat, contraindication, condition, limitation, sequence/order detail, or required component that is explicitly supported by the material.
+Do not respond to a familiar topic by asking for an overview of that topic.
+Instead, narrow the tested claim so that the learner must use the specific cited detail.
 
 If the style profile or explicit user instructions ask for advanced, scientific, technical, fellowship-level, board-style, or exam-style questions, strongly prefer questions that test:
 - mechanisms

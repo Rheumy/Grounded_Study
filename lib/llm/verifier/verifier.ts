@@ -102,6 +102,12 @@ function hasSpecificitySignal(value: string): boolean {
   );
 }
 
+function hasOverviewFramingSignal(value: string): boolean {
+  return /\b(?:what is|what are|role of|function of|importance of|significance of|mechanism of|purpose of)\b|\bwhat does\b.{0,30}\bdo\b|\bhow\b.{0,30}\bwork(?:s)?\b|\bwhich mechanism\b|\bwhich description best describes\b/.test(
+    value
+  );
+}
+
 function tokenOverlapCount(a: string, b: string): number {
   const left = new Set(tokenize(a));
   const right = new Set(tokenize(b));
@@ -323,7 +329,8 @@ function buildOutsiderChallengeContext(styleProfile: unknown): string {
     "- Before any other check, decide whether this outsider could answer this exact stem or proposition correctly without reading the cited evidence.",
     "- If yes, the question must fail with LOW_EDUCATIONAL_VALUE.",
     "- A passing question must depend on a source-specific qualifier, exception, threshold, mechanism, timing detail, contextual distinction, comparison, or applied detail.",
-    "- Do not fail solely because the broader topic is familiar, widely taught, or clinically important."
+    "- Do not fail solely because the broader topic is familiar, widely taught, or clinically important.",
+    '- Headline or overview framing such as "what is X", "what does X do", "role of X", "mechanism of X", "importance of X", or "how X works" should fail only when the exact stem still does not depend on a narrower source-specific detail.'
   ].join("\n");
 }
 
@@ -415,6 +422,7 @@ function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
   const normalizedStem = stem.toLowerCase();
   const detailContext = `${normalizedStem} ${answer.toLowerCase()} ${rationale.toLowerCase()}`;
   const hasSpecificity = hasSpecificitySignal(detailContext) || hasNuanceSignal(detailContext);
+  const hasOverviewFraming = hasOverviewFramingSignal(normalizedStem);
   const shortDefinitionalStem =
     wordCount(stem) <= 16 &&
     /^(?:what is|which of the following is|which statement is|which term best describes|which feature is)/.test(
@@ -422,7 +430,9 @@ function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
     );
 
   return (
-    (!hasSpecificity && shortDefinitionalStem && !hasReasoningSignal(normalizedStem)) ||
+    (!hasSpecificity &&
+      (shortDefinitionalStem || hasOverviewFraming) &&
+      !hasReasoningSignal(normalizedStem)) ||
     (wordCount(stem) <= 12 &&
       wordCount(rationale) <= 24 &&
       !hasReasoningSignal(detailContext) &&
@@ -446,7 +456,13 @@ function looksLowDepthForHighRigor(question: GeneratedQuestion): boolean {
   const stem = normalizeSpace(question.stem);
   const rationale = normalizeSpace(question.rationale);
   const normalized = `${stem} ${rationale}`.toLowerCase();
-  return wordCount(stem) <= 10 && wordCount(rationale) <= 24 && !hasReasoningSignal(normalized);
+  return (
+    (wordCount(stem) <= 18 &&
+      hasOverviewFramingSignal(normalized) &&
+      !hasSpecificitySignal(normalized) &&
+      !hasNuanceSignal(normalized)) ||
+    (wordCount(stem) <= 10 && wordCount(rationale) <= 24 && !hasReasoningSignal(normalized))
+  );
 }
 
 function findOutsiderHeuristicFailure(params: {

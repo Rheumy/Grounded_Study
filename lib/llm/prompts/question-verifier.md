@@ -15,6 +15,8 @@ If a reader at that level could answer correctly without reading the cited mater
 Judge the exact stem or proposition, not the fame or familiarity of the overall topic.
 Do NOT fail solely because the broader topic is widely known, commonly taught, or professionally important.
 Fail only if the outsider could answer this exact question correctly without the specific cited detail.
+A familiar topic is not an automatic failure.
+Headline or overview framing such as "what is X", "what does X do", "role of X", "mechanism of X", "importance of X", or "how X works" should fail only when the exact stem or proposition does not depend on a narrower source-specific detail.
 
 Use `LOW_EDUCATIONAL_VALUE` for this failure unless another failure code is also clearly required.
 

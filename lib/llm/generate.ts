@@ -50,12 +50,13 @@ function getSourceSpecificSignalScore(content: string): number {
   return (
     countMatches(
       normalized,
-      /\b(?:although|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|rather than|relative to|unless|versus|when|within|without)\b/g
+      /\b(?:after|although|before|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|only if|only when|prior to|rather than|relative to|subsequent|then|unless|versus|when|whereas|within|without)\b/g
     ) * 2 +
     countMatches(
       normalized,
-      /\b(?:caveat|condition|contraindication|criteria|criterion|exception|implication|threshold|timing)\b/g
+      /\b(?:caveat|component|condition|contraindication|criteria|criterion|exception|implication|limitation|order|prerequisite|required|requirement|sequence|step|threshold|timing)\b/g
     ) * 2 +
+    countMatches(normalized, /\b(?:first|second|third|final|initial|next)\b/g) +
     countMatches(normalized, /\b\d+(?:\.\d+)?(?:%|x)?\b/g)
   );
 }
@@ -72,7 +73,7 @@ function extractQuerySnippet(content: string, strategy: RetryStrategy): string {
 
   const normalized = collapsed.toLowerCase();
   const focusPattern =
-    /\b(?:although|compared with|compared to|despite|except|however|if|in contrast|instead|less than|more than|rather than|relative to|unless|versus|vs\.?|when|within|without|caveat|condition|contraindication|criteria|criterion|exception|implication|threshold|timing|\d+(?:\.\d+)?(?:%|x)?)\b/;
+    /\b(?:after|although|before|caveat|compared with|compared to|component|condition|contraindication|criteria|criterion|exception|first|however|if|implication|initial|limitation|next|only if|only when|order|prerequisite|prior to|required|requirement|sequence|step|subsequent|then|threshold|timing|unless|versus|vs\.?|when|whereas|within|\d+(?:\.\d+)?(?:%|x)?)\b/;
   const match = focusPattern.exec(normalized);
 
   if (!match) {
@@ -101,6 +102,17 @@ function buildNarrowRetryQuery(sourceChunks: RetrievalChunk[]): string | null {
   }
 
   return extractQuerySnippet(bestChunk.chunk.content, "narrow_source_specific");
+}
+
+function rankChunksForRetry(chunks: RetrievalChunk[]): RetrievalChunk[] {
+  return [...chunks].sort((left, right) => {
+    const leftScore =
+      getSourceSpecificSignalScore(left.content) * 3 + getEducationalChunkScore(left.content);
+    const rightScore =
+      getSourceSpecificSignalScore(right.content) * 3 + getEducationalChunkScore(right.content);
+
+    return rightScore - leftScore;
+  });
 }
 
 async function getRandomChunkSnippet(params: {
@@ -463,6 +475,20 @@ export async function generateQuestions(params: {
           limit: 6,
           userId: params.ownerId
         });
+        if (retryStrategy === "narrow_source_specific" && currentChunks.length > 1) {
+          currentChunks = rankChunksForRetry(currentChunks);
+          logger.info(
+            {
+              ownerId: params.ownerId,
+              questionType,
+              attempt: attempt + 1,
+              retryMode,
+              retryStrategy,
+              chunkCount: currentChunks.length
+            },
+            "Ranked retrieval chunks for narrow, source-specific retry"
+          );
+        }
         logger.info(
           {
             ownerId: params.ownerId,
@@ -479,15 +505,15 @@ export async function generateQuestions(params: {
       }
 
       logger.info(
-          {
-            ownerId: params.ownerId,
-            questionType,
-            attempt: attempt + 1,
-            retryMode,
-            retryStrategy,
-            chunkCount: currentChunks.length
-          },
-          "Generation attempt started"
+        {
+          ownerId: params.ownerId,
+          questionType,
+          attempt: attempt + 1,
+          retryMode,
+          retryStrategy,
+          chunkCount: currentChunks.length
+        },
+        "Generation attempt started"
       );
 
       if (currentChunks.length === 0) {

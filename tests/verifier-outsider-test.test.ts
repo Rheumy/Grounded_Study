@@ -117,4 +117,45 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("PASSED");
   });
+
+  it("does not auto-reject a familiar topic in generalist mode when the exact claim depends on a narrower source detail", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem: "Which CRISPR-Cas9 detail is supported for the system described in the source?",
+        options: [
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+          "Cleavage is independent of PAM recognition once guide RNA is present",
+          "Any mismatch in the distal guide region prevents cleavage completely",
+          "Cas9 cuts RNA targets more efficiently than DNA targets in this system"
+        ],
+        answer:
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+        rationale:
+          "The cited evidence narrows the claim to seed-region complementarity near the PAM, which is a specific mechanistic detail rather than a generic overview of CRISPR-Cas9.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "seed-region complementarity near the PAM was required for efficient cleavage",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "In the described system, seed-region complementarity near the PAM was required for efficient cleavage, whereas distal mismatches were sometimes tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
 });
