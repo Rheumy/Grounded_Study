@@ -24,6 +24,18 @@ type NormalizedCitation = {
   page: number | null;
 };
 
+type FuzzyChunkToken = {
+  value: string;
+  start: number;
+  end: number;
+};
+
+const MIN_FUZZY_CITATION_TOKENS = 5;
+const MAX_FUZZY_CITATION_TOKENS = 24;
+const MAX_FUZZY_CITATION_CHARS = 220;
+const MIN_FUZZY_MATCH_DENSITY = 0.65;
+const MAX_FUZZY_EXTRA_TOKENS = 4;
+
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -165,6 +177,183 @@ function findComparableSubstring(chunkContent: string, excerpt: string): string 
   }
 
   return chunkContent.slice(originalStart, originalEnd + 1);
+}
+
+function normalizeFuzzyCitationText(value: string): string {
+  let normalized = "";
+  let previousWasSpace = true;
+
+  for (const char of value) {
+    if (/[a-z0-9]/i.test(char)) {
+      normalized += char.toLowerCase();
+      previousWasSpace = false;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (!previousWasSpace && normalized.length > 0) {
+        normalized += " ";
+        previousWasSpace = true;
+      }
+    }
+  }
+
+  return normalized.trim();
+}
+
+function buildFuzzyChunkTokenIndex(value: string): FuzzyChunkToken[] {
+  const tokens: FuzzyChunkToken[] = [];
+  let tokenValue = "";
+  let tokenStart = -1;
+  let tokenEnd = -1;
+
+  const flushToken = () => {
+    if (!tokenValue) {
+      return;
+    }
+
+    tokens.push({
+      value: tokenValue,
+      start: tokenStart,
+      end: tokenEnd
+    });
+    tokenValue = "";
+    tokenStart = -1;
+    tokenEnd = -1;
+  };
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+
+    if (/[a-z0-9]/i.test(char)) {
+      if (!tokenValue) {
+        tokenStart = index;
+      }
+
+      tokenValue += char.toLowerCase();
+      tokenEnd = index;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      flushToken();
+    }
+  }
+
+  flushToken();
+
+  return tokens;
+}
+
+function findNextMatchingChunkTokenIndex(
+  chunkTokens: FuzzyChunkToken[],
+  startIndex: number,
+  excerptToken: string
+): number {
+  for (let index = startIndex; index < chunkTokens.length; index += 1) {
+    if (chunkTokens[index]?.value === excerptToken) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findFuzzyCitationSubstring(chunkContent: string, excerpt: string): string | null {
+  const normalizedExcerpt = normalizeFuzzyCitationText(excerpt);
+  if (!normalizedExcerpt || normalizedExcerpt.length > MAX_FUZZY_CITATION_CHARS) {
+    return null;
+  }
+
+  const excerptTokens = normalizedExcerpt.split(" ").filter(Boolean);
+  if (
+    excerptTokens.length < MIN_FUZZY_CITATION_TOKENS ||
+    excerptTokens.length > MAX_FUZZY_CITATION_TOKENS
+  ) {
+    return null;
+  }
+
+  const chunkTokens = buildFuzzyChunkTokenIndex(chunkContent);
+  if (chunkTokens.length === 0) {
+    return null;
+  }
+
+  const minimumMatches = Math.ceil(excerptTokens.length * 0.8);
+  let bestMatch:
+    | {
+        start: number;
+        end: number;
+        matchedCount: number;
+        spanTokenCount: number;
+      }
+    | null = null;
+
+  for (let startIndex = 0; startIndex < chunkTokens.length; startIndex += 1) {
+    let chunkCursor = startIndex;
+    let firstMatchIndex = -1;
+    let lastMatchIndex = -1;
+    let matchedCount = 0;
+
+    for (const excerptToken of excerptTokens) {
+      const matchedIndex = findNextMatchingChunkTokenIndex(chunkTokens, chunkCursor, excerptToken);
+
+      if (matchedIndex === -1) {
+        continue;
+      }
+
+      if (firstMatchIndex === -1) {
+        firstMatchIndex = matchedIndex;
+      }
+
+      lastMatchIndex = matchedIndex;
+      matchedCount += 1;
+      chunkCursor = matchedIndex + 1;
+
+      if (matchedCount < minimumMatches) {
+        continue;
+      }
+
+      const spanTokenCount = lastMatchIndex - firstMatchIndex + 1;
+      const matchDensity = matchedCount / spanTokenCount;
+      if (
+        matchDensity < MIN_FUZZY_MATCH_DENSITY ||
+        spanTokenCount > excerptTokens.length + MAX_FUZZY_EXTRA_TOKENS
+      ) {
+        continue;
+      }
+
+      const candidate = {
+        start: chunkTokens[firstMatchIndex]?.start ?? -1,
+        end: chunkTokens[lastMatchIndex]?.end ?? -1,
+        matchedCount,
+        spanTokenCount
+      };
+
+      if (candidate.start === -1 || candidate.end === -1) {
+        continue;
+      }
+
+      if (
+        !bestMatch ||
+        candidate.spanTokenCount < bestMatch.spanTokenCount ||
+        (candidate.spanTokenCount === bestMatch.spanTokenCount &&
+          candidate.matchedCount > bestMatch.matchedCount) ||
+        (candidate.spanTokenCount === bestMatch.spanTokenCount &&
+          candidate.matchedCount === bestMatch.matchedCount &&
+          candidate.start < bestMatch.start)
+      ) {
+        bestMatch = candidate;
+      }
+
+      break;
+    }
+  }
+
+  if (!bestMatch) {
+    return null;
+  }
+
+  return chunkContent.slice(bestMatch.start, bestMatch.end + 1);
 }
 
 function truncate(content: string, max = 800) {
@@ -435,7 +624,7 @@ function repairCitationAgainstChunks(params: {
   citation: NormalizedCitation;
   chunksById: Map<string, RetrievalChunk>;
   requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
-}): NormalizedCitation {
+}): NormalizedCitation | null {
   const chunk = params.chunksById.get(params.citation.chunkId);
 
   if (!chunk) {
@@ -496,6 +685,24 @@ function repairCitationAgainstChunks(params: {
     }
   }
 
+  for (const candidate of excerptCandidates) {
+    const repairedExcerpt = findFuzzyCitationSubstring(chunk.content, candidate);
+    if (repairedExcerpt) {
+      logger.info(
+        {
+          requestedType: params.requestedType,
+          chunkId: params.citation.chunkId,
+          repaired: true
+        },
+        "Citation excerpt repaired via fuzzy alignment"
+      );
+      return {
+        ...params.citation,
+        excerpt: repairedExcerpt
+      };
+    }
+  }
+
   logger.warn(
     {
       requestedType: params.requestedType,
@@ -507,7 +714,7 @@ function repairCitationAgainstChunks(params: {
     "Citation excerpt could not be matched to source chunk during generation"
   );
 
-  throw new Error("Citation excerpt does not match the cited evidence");
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -697,16 +904,23 @@ function repairNormalizedQuestionCitations(params: {
     ? (params.normalizedQuestion.citations as NormalizedCitation[])
     : [];
   const chunksById = new Map(params.chunks.map((chunk) => [chunk.id, chunk]));
-
-  return {
-    ...params.normalizedQuestion,
-    citations: rawCitations.map((citation) =>
+  const repairedCitations = rawCitations
+    .map((citation) =>
       repairCitationAgainstChunks({
         citation,
         chunksById,
         requestedType: params.requestedType
       })
     )
+    .filter((citation): citation is NormalizedCitation => Boolean(citation));
+
+  if (repairedCitations.length === 0) {
+    throw new Error("Citation excerpt does not match the cited evidence");
+  }
+
+  return {
+    ...params.normalizedQuestion,
+    citations: repairedCitations
   };
 }
 

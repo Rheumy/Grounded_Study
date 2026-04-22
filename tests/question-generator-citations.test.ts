@@ -118,4 +118,46 @@ describe("question generator citation handling", () => {
       })
     ).rejects.toThrow("Citation excerpt does not match the cited evidence");
   });
+
+  it("repairs short paraphrased excerpts to the verbatim chunk span via fuzzy alignment", async () => {
+    const fuzzyChunk = {
+      id: "chunk-2",
+      content:
+        "Patients with active disease were advised to avoid live vaccines during treatment and for 3 months afterward.",
+      page: 6
+    };
+
+    createCompletionMock.mockResolvedValueOnce(
+      buildResponse({
+        type: "TRUE_FALSE",
+        stem: "Patients with active disease should avoid live vaccines during treatment for 3 months afterward. True or false?",
+        answer: "True",
+        rationale:
+          "The cited evidence states that live vaccines should be avoided during treatment and for 3 months afterward.",
+        citations: [
+          {
+            chunkId: "chunk-2",
+            excerpt: "avoid live vaccines during treatment for 3 months afterward"
+          }
+        ],
+        difficulty: 3
+      })
+    );
+
+    const result = await generateQuestion({
+      styleProfile: { assumedBackgroundLevel: "specialist" },
+      difficulty: 3,
+      questionType: "TRUE_FALSE",
+      chunks: [baseChunk, fuzzyChunk]
+    });
+
+    expect(result.citations[0]?.chunkId).toBe("chunk-2");
+    expect(result.citations[0]?.excerpt).not.toBe(
+      "avoid live vaccines during treatment for 3 months afterward"
+    );
+    expect(result.citations[0]?.excerpt).toBe(
+      "avoid live vaccines during treatment and for 3 months"
+    );
+    expect(fuzzyChunk.content.includes(result.citations[0]?.excerpt ?? "")).toBe(true);
+  });
 });
