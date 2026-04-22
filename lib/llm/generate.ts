@@ -593,7 +593,10 @@ export async function generateQuestions(params: {
             "Generation rejected citation mismatch before verifier"
           );
         }
-        reason = "Question generation produced an invalid response";
+        reason =
+          genError instanceof Error
+            ? `Question generation failed: ${genError.message}`
+            : "Question generation produced an invalid response";
         retryMode = "same_chunks";
         continue;
       }
@@ -658,7 +661,10 @@ export async function generateQuestions(params: {
           },
           "verifyQuestion threw — retrying with same chunks"
         );
-        reason = "Verification step failed unexpectedly";
+        reason =
+          verifyError instanceof Error
+            ? `Verification failed: ${verifyError.message}`
+            : "Verification step failed unexpectedly";
         retryMode = "same_chunks";
         continue;
       }
