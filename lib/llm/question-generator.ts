@@ -10,7 +10,7 @@ import {
 import { logger } from "@/lib/observability/logger";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
 
-const MODEL = "gpt-4o-mini";
+const MODEL = "gpt-4o";
 
 export type RetrievalChunk = {
   id: string;
