@@ -36,6 +36,21 @@ const ALLOWED_FAILURE_CODES = new Set<FailureCode>([
   "INVALID_STRUCTURE"
 ]);
 
+const OUTSIDER_SOFT_PASS_BLOCKING_CODES = new Set<FailureCode>([
+  "UNSUPPORTED_STEM",
+  "UNSUPPORTED_ANSWER",
+  "UNSUPPORTED_RATIONALE",
+  "AMBIGUOUS_QUESTION",
+  "MULTIPLE_POSSIBLE_ANSWERS",
+  "WEAK_DISTRACTORS",
+  "INVALID_TRUE_FALSE",
+  "OVERREACHING_MODEL_ANSWER",
+  "MISSING_CITATIONS",
+  "BAD_CITATION_LINKAGE",
+  "RETRIEVAL_JARGON",
+  "INVALID_STRUCTURE"
+]);
+
 function normalizeFailureCodes(raw: unknown): FailureCode[] {
   if (!Array.isArray(raw)) return [];
 
@@ -281,6 +296,31 @@ function reasonSuggestsMetadataFailure(reason: string, failureCodes: string[]): 
   return /metadata|document structure|table of contents|author (?:name|qualification|affiliation|biography)|bibliograph|reference list|copyright|publisher|document formatting/.test(
     normalized
   );
+}
+
+function reasonSuggestsOutsiderSignal(reason: string): boolean {
+  const normalized = reason.trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /\bgeneralist\b|\boutsider\b/.test(normalized) ||
+    /without requiring source-specific information/.test(normalized) ||
+    /without (?:reading|studying) the cited (?:evidence|source)/.test(normalized) ||
+    /does not require the specific material/.test(normalized) ||
+    /too general to require the cited source detail/.test(normalized) ||
+    /field-general summary/.test(normalized)
+  );
+}
+
+function getOutsiderSignal(result: VerifierResult): VerifierResult | null {
+  return reasonSuggestsOutsiderSignal(result.reason) ? result : null;
+}
+
+function hasOutsiderSoftPassBlockers(result: VerifierResult): boolean {
+  return (result.failureCodes ?? []).some((code) => OUTSIDER_SOFT_PASS_BLOCKING_CODES.has(code));
 }
 
 function styleRequestsHighRigor(styleProfile: unknown): boolean {
@@ -661,11 +701,24 @@ export async function verifyQuestion(params: {
   }
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
   const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
+  const modelOutsiderSignal = getOutsiderSignal(result);
 
-  if (
+  if (modelOutsiderSignal) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: modelOutsiderSignal.failureCodes ?? [],
+        reason: modelOutsiderSignal.reason
+      },
+      "Verifier outsider-test signal fired"
+    );
+  }
+
+  const metadataFailure =
     looksLikeMetadataQuestion(params.question) ||
-    reasonSuggestsMetadataFailure(result.reason, result.failureCodes ?? [])
-  ) {
+    reasonSuggestsMetadataFailure(result.reason, result.failureCodes ?? []);
+
+  if (metadataFailure) {
     result = {
       status: "FAILED",
       reason:
@@ -698,6 +751,14 @@ export async function verifyQuestion(params: {
     highRigorRequested
   });
   if (outsiderHeuristicFailure) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: outsiderHeuristicFailure.failureCodes ?? [],
+        reason: outsiderHeuristicFailure.reason
+      },
+      "Verifier outsider-test signal fired"
+    );
     result = {
       status: "FAILED",
       reason:
@@ -727,6 +788,29 @@ export async function verifyQuestion(params: {
           : "Question is too basic for the requested exam-style or high-rigor question style",
       failureCodes: ensureFailureCodes(result.failureCodes ?? [], extraFailureCodes),
       confidence: result.confidence ?? "MEDIUM"
+    };
+  }
+
+  const outsiderSignal = getOutsiderSignal(result) ?? outsiderHeuristicFailure ?? modelOutsiderSignal;
+  if (
+    result.status === "FAILED" &&
+    outsiderSignal &&
+    !metadataFailure &&
+    !hasOutsiderSoftPassBlockers(result)
+  ) {
+    logger.info(
+      {
+        userId: params.userId ?? null,
+        questionType: params.question.type,
+        reason: result.reason
+      },
+      "Outsider-test signal fired but question passed other checks"
+    );
+    result = {
+      status: "PASSED",
+      reason: "Supported",
+      failureCodes: [],
+      confidence: result.confidence
     };
   }
 

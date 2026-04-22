@@ -25,6 +25,7 @@ vi.mock("@/lib/observability/logger", () => ({
 }));
 
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
+import { logger } from "@/lib/observability/logger";
 
 describe("verifier outsider test", () => {
   beforeEach(() => {
@@ -157,5 +158,186 @@ describe("verifier outsider test", () => {
     });
 
     expect(result.status).toBe("PASSED");
+  });
+
+  it("soft-passes an outsider-only verifier signal when the question passes other checks", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "FAILED",
+              reason:
+                "The question can be answered by a generalist without requiring source-specific information.",
+              failureCodes: ["LOW_EDUCATIONAL_VALUE"],
+              confidence: "MEDIUM"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem: "Which CRISPR-Cas9 detail is supported for the system described in the source?",
+        options: [
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+          "Cleavage is independent of PAM recognition once guide RNA is present",
+          "Any mismatch in the distal guide region prevents cleavage completely",
+          "Cas9 cuts RNA targets more efficiently than DNA targets in this system"
+        ],
+        answer:
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+        rationale:
+          "The cited evidence narrows the claim to seed-region complementarity near the PAM, which is a specific mechanistic detail rather than a generic overview of CRISPR-Cas9.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "seed-region complementarity near the PAM was required for efficient cleavage",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "In the described system, seed-region complementarity near the PAM was required for efficient cleavage, whereas distal mismatches were sometimes tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      },
+      userId: "user-1"
+    });
+
+    expect(result.status).toBe("PASSED");
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        questionType: "MCQ",
+        reason:
+          "The question can be answered by a generalist without requiring source-specific information."
+      }),
+      "Outsider-test signal fired but question passed other checks"
+    );
+  });
+
+  it("still fails when outsider-test signal co-occurs with another verifier failure", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "FAILED",
+              reason:
+                "The question can be answered by a generalist without requiring source-specific information.",
+              failureCodes: ["LOW_EDUCATIONAL_VALUE", "UNSUPPORTED_ANSWER"],
+              confidence: "HIGH"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem: "Which CRISPR-Cas9 detail is supported for the system described in the source?",
+        options: [
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+          "Cleavage is independent of PAM recognition once guide RNA is present",
+          "Any mismatch in the distal guide region prevents cleavage completely",
+          "Cas9 cuts RNA targets more efficiently than DNA targets in this system"
+        ],
+        answer:
+          "Cleavage requires seed-region complementarity near the PAM rather than full-length matching across the guide",
+        rationale:
+          "The cited evidence narrows the claim to seed-region complementarity near the PAM, which is a specific mechanistic detail rather than a generic overview of CRISPR-Cas9.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "seed-region complementarity near the PAM was required for efficient cleavage",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "In the described system, seed-region complementarity near the PAM was required for efficient cleavage, whereas distal mismatches were sometimes tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "UNSUPPORTED_ANSWER"])
+    );
+  });
+
+  it("keeps hard citation invariants ahead of outsider handling", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "FAILED",
+              reason:
+                "The question can be answered by a generalist without requiring source-specific information.",
+              failureCodes: ["LOW_EDUCATIONAL_VALUE"],
+              confidence: "MEDIUM"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem: "Chemical peels are effective procedures for treating acne scarring.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The cited material notes that chemical peels are used to improve acne scarring.",
+        citations: [
+          {
+            chunkId: "missing-chunk",
+            excerpt: "chemical peels are used to improve acne scarring",
+            page: 1
+          }
+        ],
+        difficulty: 2,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Chemical peels are used to improve acne scarring in selected patients, alongside other resurfacing options.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "specialist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.reason).toBe("Citation references an unknown chunk");
+    expect(result.failureCodes).toEqual(["BAD_CITATION_LINKAGE"]);
+    expect(createCompletion).not.toHaveBeenCalled();
   });
 });
