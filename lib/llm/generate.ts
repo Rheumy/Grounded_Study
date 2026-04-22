@@ -541,6 +541,9 @@ export async function generateQuestions(params: {
           "Question LLM generation completed"
         );
       } catch (genError) {
+        const generationErrorMessage =
+          genError instanceof Error ? genError.message : String(genError);
+
         // Log the raw error (e.g. Zod validation failure on LLM output) and retry
         logger.warn(
           {
@@ -548,10 +551,22 @@ export async function generateQuestions(params: {
             questionType,
             attempt: attempt + 1,
             retryMode: "same_chunks",
-            error: genError instanceof Error ? genError.message : String(genError)
+            error: generationErrorMessage
           },
           "generateQuestion threw — retrying with same chunks"
         );
+        if (/citation/i.test(generationErrorMessage)) {
+          logger.info(
+            {
+              ownerId: params.ownerId,
+              questionType,
+              attempt: attempt + 1,
+              failureBucket: "BAD_CITATION_LINKAGE",
+              retryMode: "same_chunks"
+            },
+            "Generation rejected citation mismatch before verifier"
+          );
+        }
         reason = "Question generation produced an invalid response";
         retryMode = "same_chunks";
         continue;

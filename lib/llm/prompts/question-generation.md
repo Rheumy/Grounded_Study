@@ -233,10 +233,16 @@ Each citation object must be:
 
 Rules:
 - use the exact chunk id
+- excerpt must be a short verbatim quote copied exactly from the cited chunk text
+- excerpt must be an exact contiguous substring of the cited chunk, not a paraphrase or summary
+- do not paraphrase the excerpt
+- do not summarize the excerpt
+- do not invent or clean up wording that does not appear in the cited chunk
 - excerpt must be short, relevant, and truly support the answer
 - do not fabricate page numbers
 - do not include unsupported citations
 - if support is weak or indirect, do not guess — return `INSUFFICIENT_EVIDENCE`
+- if you cannot provide an exact supporting quote from the cited chunk, return `INSUFFICIENT_EVIDENCE`
 
 ## Difficulty handling
 

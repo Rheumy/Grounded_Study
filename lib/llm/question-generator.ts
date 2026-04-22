@@ -18,8 +18,94 @@ export type RetrievalChunk = {
   page: number | null;
 };
 
+type NormalizedCitation = {
+  chunkId: string;
+  excerpt: string;
+  page: number | null;
+};
+
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function stripWrappingQuotes(value: string): string {
+  return value
+    .replace(/^[\s"'`“”‘’]+/, "")
+    .replace(/[\s"'`“”‘’]+$/, "")
+    .trim();
+}
+
+function normalizeComparableCharacter(value: string): string {
+  if (/\s/.test(value)) {
+    return " ";
+  }
+
+  switch (value) {
+    case "“":
+    case "”":
+    case "„":
+    case "‟":
+      return '"';
+    case "‘":
+    case "’":
+    case "‚":
+    case "‛":
+      return "'";
+    case "–":
+    case "—":
+    case "−":
+      return "-";
+    default:
+      return value.toLowerCase();
+  }
+}
+
+function buildComparableIndex(value: string): { normalized: string; originalIndexes: number[] } {
+  let normalized = "";
+  const originalIndexes: number[] = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const nextChar = normalizeComparableCharacter(value[index]);
+
+    if (nextChar === " ") {
+      if (normalized.length === 0 || normalized.endsWith(" ")) {
+        continue;
+      }
+    }
+
+    normalized += nextChar;
+    originalIndexes.push(index);
+  }
+
+  if (normalized.endsWith(" ")) {
+    normalized = normalized.slice(0, -1);
+    originalIndexes.pop();
+  }
+
+  return { normalized, originalIndexes };
+}
+
+function findComparableSubstring(chunkContent: string, excerpt: string): string | null {
+  const normalizedExcerpt = buildComparableIndex(excerpt).normalized;
+  if (!normalizedExcerpt) {
+    return null;
+  }
+
+  const comparableChunk = buildComparableIndex(chunkContent);
+  const matchIndex = comparableChunk.normalized.indexOf(normalizedExcerpt);
+  if (matchIndex === -1) {
+    return null;
+  }
+
+  const originalStart = comparableChunk.originalIndexes[matchIndex];
+  const originalEnd =
+    comparableChunk.originalIndexes[matchIndex + normalizedExcerpt.length - 1];
+
+  if (originalStart == null || originalEnd == null) {
+    return null;
+  }
+
+  return chunkContent.slice(originalStart, originalEnd + 1);
 }
 
 function truncate(content: string, max = 800) {
@@ -225,7 +311,7 @@ function canonicalizeTrueFalseAnswer(answer: string): string {
 // Citation normalisation
 // The model may use different field names for chunk ID and excerpt text.
 // ---------------------------------------------------------------------------
-function normalizeCitation(c: unknown): Record<string, unknown> {
+function normalizeCitation(c: unknown): NormalizedCitation {
   if (!c || typeof c !== "object" || Array.isArray(c)) {
     return { chunkId: String(c ?? ""), excerpt: "", page: null };
   }
@@ -241,6 +327,85 @@ function normalizeCitation(c: unknown): Record<string, unknown> {
     ),
     page: Number.isInteger(numericPage) ? numericPage : null
   };
+}
+
+function repairCitationAgainstChunks(params: {
+  citation: NormalizedCitation;
+  chunksById: Map<string, RetrievalChunk>;
+  requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+}): NormalizedCitation {
+  const chunk = params.chunksById.get(params.citation.chunkId);
+
+  if (!chunk) {
+    logger.warn(
+      {
+        requestedType: params.requestedType,
+        chunkId: params.citation.chunkId,
+        excerptMatch: "failure",
+        repairAttempted: false,
+        failureBucket: "BAD_CITATION_LINKAGE"
+      },
+      "Citation referenced an unknown chunk during generation"
+    );
+    throw new Error(`Citation references unknown chunk: ${params.citation.chunkId}`);
+  }
+
+  const excerptCandidates = [...new Set([
+    params.citation.excerpt,
+    stripWrappingQuotes(params.citation.excerpt)
+  ])].filter((candidate) => candidate.length > 0);
+
+  for (const candidate of excerptCandidates) {
+    if (chunk.content.includes(candidate)) {
+      logger.info(
+        {
+          requestedType: params.requestedType,
+          chunkId: params.citation.chunkId,
+          excerptMatch: "success",
+          repairAttempted: candidate !== params.citation.excerpt,
+          failureBucket: null
+        },
+        "Citation excerpt matched source chunk during generation"
+      );
+      return {
+        ...params.citation,
+        excerpt: candidate
+      };
+    }
+  }
+
+  for (const candidate of excerptCandidates) {
+    const repairedExcerpt = findComparableSubstring(chunk.content, candidate);
+    if (repairedExcerpt) {
+      logger.info(
+        {
+          requestedType: params.requestedType,
+          chunkId: params.citation.chunkId,
+          excerptMatch: "success",
+          repairAttempted: true,
+          failureBucket: null
+        },
+        "Citation excerpt repaired to exact chunk text during generation"
+      );
+      return {
+        ...params.citation,
+        excerpt: repairedExcerpt
+      };
+    }
+  }
+
+  logger.warn(
+    {
+      requestedType: params.requestedType,
+      chunkId: params.citation.chunkId,
+      excerptMatch: "failure",
+      repairAttempted: excerptCandidates.length > 0,
+      failureBucket: "BAD_CITATION_LINKAGE"
+    },
+    "Citation excerpt could not be matched to source chunk during generation"
+  );
+
+  throw new Error("Citation excerpt does not match the cited evidence");
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +586,28 @@ function normalizeRawQuestion(
   return { type, stem, options, answer, rationale, citations, difficulty, tags, verifierStatus };
 }
 
+function repairNormalizedQuestionCitations(params: {
+  normalizedQuestion: Record<string, unknown>;
+  requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
+  chunks: RetrievalChunk[];
+}): Record<string, unknown> {
+  const rawCitations = Array.isArray(params.normalizedQuestion.citations)
+    ? (params.normalizedQuestion.citations as NormalizedCitation[])
+    : [];
+  const chunksById = new Map(params.chunks.map((chunk) => [chunk.id, chunk]));
+
+  return {
+    ...params.normalizedQuestion,
+    citations: rawCitations.map((citation) =>
+      repairCitationAgainstChunks({
+        citation,
+        chunksById,
+        requestedType: params.requestedType
+      })
+    )
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -530,6 +717,25 @@ export async function generateQuestion(params: {
       "Failed to normalise raw LLM question output"
     );
     throw normError;
+  }
+
+  try {
+    normalized = repairNormalizedQuestionCitations({
+      normalizedQuestion: normalized,
+      requestedType,
+      chunks: params.chunks
+    });
+  } catch (citationError) {
+    logger.warn(
+      {
+        requestedType,
+        normalizedKeys: Object.keys(normalized),
+        error: citationError instanceof Error ? citationError.message : String(citationError),
+        rawPreview: rawText.slice(0, 600)
+      },
+      "Failed to align generated citation excerpts with source chunks"
+    );
+    throw citationError;
   }
 
   // Final schema validation — after normalisation fields should be present and typed correctly
