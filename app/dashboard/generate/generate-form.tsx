@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  DEFAULT_QUESTION_STYLE_PRESET_KEY,
+  PRESETS_IN_DISPLAY_ORDER,
+  resolvePreset,
+  type PresetKey
+} from "@/lib/llm/presets";
 
 type Doc = { id: string; title: string };
 type Profile = {
@@ -18,6 +24,7 @@ type GenerationSummary = {
   failedCount: number;
   primaryFailureReason?: string | null;
 };
+type StyleSelectionMode = "preset" | "custom";
 
 function describeGenerationFailure(reason?: string | null): string {
   const normalized = reason?.trim().toLowerCase() ?? "";
@@ -62,6 +69,10 @@ export function GenerateForm({
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
   const [count, setCount] = useState(5);
+  const [styleSelectionMode, setStyleSelectionMode] = useState<StyleSelectionMode>("preset");
+  const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey>(
+    DEFAULT_QUESTION_STYLE_PRESET_KEY
+  );
   const [selectedStyleProfileId, setSelectedStyleProfileId] = useState<string>("");
 
   const toggleDoc = (id: string) => {
@@ -71,11 +82,22 @@ export function GenerateForm({
   };
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedStyleProfileId) ?? null;
-  const shortAnswerGuidanceVisible = (selectedProfile?.distribution?.SHORT_ANSWER ?? 0) > 0;
+  const selectedPreset = resolvePreset(selectedPresetKey) ?? PRESETS_IN_DISPLAY_ORDER[0];
+  const activeDistribution =
+    styleSelectionMode === "custom"
+      ? selectedProfile?.distribution ?? null
+      : selectedPreset.styleProfile.questionTypeDistribution;
+  const shortAnswerGuidanceVisible = (activeDistribution?.SHORT_ANSWER ?? 0) > 0;
+  const customStyleMissing = styleSelectionMode === "custom" && !selectedStyleProfileId;
 
   const submit = async () => {
     setError(null);
     setSummary(null);
+    setStatus(null);
+    if (styleSelectionMode === "custom" && !selectedStyleProfileId) {
+      setError("Choose a saved custom style or use one of the built-in styles.");
+      return;
+    }
     setLoading(true);
     setStatus("Your questions are being built from your study material.");
     try {
@@ -84,7 +106,9 @@ export function GenerateForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentIds: selectedDocs,
-          styleProfileId: selectedStyleProfileId || null,
+          styleProfileId:
+            styleSelectionMode === "custom" ? selectedStyleProfileId || null : null,
+          presetKey: styleSelectionMode === "preset" ? selectedPreset.key : null,
           difficulty,
           count
         })
@@ -122,10 +146,87 @@ export function GenerateForm({
     }
   };
 
-  const isDisabled = selectedDocs.length === 0 || loading;
+  const isDisabled = selectedDocs.length === 0 || loading || customStyleMissing;
 
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-ink">Question style</p>
+        <p className="text-sm text-ink/60">
+          Start with a built-in style, or choose a saved custom style if you want a more exam-specific setup.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {PRESETS_IN_DISPLAY_ORDER.map((preset) => {
+            const isSelected =
+              styleSelectionMode === "preset" && selectedPreset.key === preset.key;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => {
+                  setStyleSelectionMode("preset");
+                  setSelectedPresetKey(preset.key);
+                }}
+                className={`space-y-2 rounded-2xl border p-4 text-left transition ${
+                  isSelected
+                    ? "border-accent/30 bg-accentSoft/40 shadow-sm ring-1 ring-accent/20"
+                    : "border-ink/10 bg-white hover:bg-ink/[0.02]"
+                }`}
+              >
+                <p className="text-sm font-medium text-ink">{preset.label}</p>
+                <p className="text-xs text-ink/60">{preset.description}</p>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            aria-pressed={styleSelectionMode === "custom"}
+            onClick={() => setStyleSelectionMode("custom")}
+            className={`space-y-2 rounded-2xl border p-4 text-left transition ${
+              styleSelectionMode === "custom"
+                ? "border-accent/30 bg-accentSoft/40 shadow-sm ring-1 ring-accent/20"
+                : "border-ink/10 bg-white hover:bg-ink/[0.02]"
+            }`}
+          >
+            <p className="text-sm font-medium text-ink">Use a custom style</p>
+            <p className="text-xs text-ink/60">
+              Select one of your saved question styles to match a specific exam, tone, or format.
+            </p>
+          </button>
+        </div>
+        {styleSelectionMode === "custom" ? (
+          <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
+            <p className="text-xs text-ink/60">
+              Choose a saved Question Style created from your own examples. It shapes wording, level,
+              and the question mix for this run.
+            </p>
+            {profiles.length > 0 ? (
+              <select
+                className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
+                value={selectedStyleProfileId}
+                onChange={(event) => setSelectedStyleProfileId(event.target.value)}
+              >
+                <option value="">Select a saved custom style</option>
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-sm text-ink/65">
+                No saved Question Styles yet.{" "}
+                <Link href="/dashboard/style-profiles" className="font-medium text-accent hover:underline">
+                  Create one
+                </Link>{" "}
+                to guide tone, level, and exam style.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <div className="space-y-2">
         <p className="text-sm font-medium text-ink">Choose study materials</p>
         <p className="text-sm text-ink/60">
@@ -168,38 +269,6 @@ export function GenerateForm({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-ink">Question Style</label>
-        <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
-          <p className="text-xs text-ink/60">
-            Choose a saved Question Style created from your own examples. It shapes wording, level,
-            and the question mix for this run. If you leave this blank, the default run creates MCQ only.
-          </p>
-          {profiles.length > 0 ? (
-            <select
-              className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
-              value={selectedStyleProfileId}
-              onChange={(event) => setSelectedStyleProfileId(event.target.value)}
-            >
-              <option value="">Use default generation settings</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <p className="text-sm text-ink/65">
-              No saved Question Styles yet.{" "}
-              <Link href="/dashboard/style-profiles" className="font-medium text-accent hover:underline">
-                Create one
-              </Link>{" "}
-              to guide tone, level, and exam style.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-2">
         <label className="text-sm font-medium text-ink">Number of questions</label>
         <input
           type="number"
@@ -220,7 +289,11 @@ export function GenerateForm({
         <p className="text-xs text-ink/55">
           Current MCQ generation uses exactly 4 options.
         </p>
-        {selectedProfile?.distribution ? (
+        {styleSelectionMode === "preset" ? (
+          <p className="text-xs text-ink/55">
+            Built-in styles resolve to a baked-in question profile before generation starts.
+          </p>
+        ) : selectedProfile?.distribution ? (
           <p className="text-xs text-ink/55">
             This style decides the question mix for this run based on the saved profile.
           </p>
@@ -243,6 +316,10 @@ export function GenerateForm({
       {selectedDocs.length === 0 && !loading ? (
         <p className="text-xs text-ink/60">
           To generate questions, select at least one study material.
+        </p>
+      ) : customStyleMissing && !loading ? (
+        <p className="text-xs text-ink/60">
+          Select a saved custom style or switch back to a built-in style before generating.
         </p>
       ) : null}
       {loading ? (

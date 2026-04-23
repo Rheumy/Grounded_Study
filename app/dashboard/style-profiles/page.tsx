@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/require-user";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StyleProfileForm } from "@/app/dashboard/style-profiles/style-profile-form";
+import { PRESETS_IN_DISPLAY_ORDER } from "@/lib/llm/presets";
 
 type ProfileSchema = {
   questionTypeDistribution?: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number };
@@ -37,6 +38,34 @@ export default async function StyleProfilesPage() {
           Describe the style you want, or paste example questions and marking guides that match your exam.
         </p>
       </div>
+
+      <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
+        <CardHeader>
+          <CardTitle>Built-in styles</CardTitle>
+          <CardDescription>
+            Use these universal presets when you want a fast starting point without creating a custom style first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {PRESETS_IN_DISPLAY_ORDER.map((preset) => (
+              <div
+                key={preset.key}
+                className="space-y-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4"
+              >
+                <p className="font-medium text-ink">{preset.label}</p>
+                <p className="text-sm text-ink/60">{preset.description}</p>
+                <p className="text-xs text-ink/50">
+                  Question types: {typeLabel(preset.styleProfile.questionTypeDistribution)}
+                </p>
+                <p className="text-xs text-ink/50">
+                  Tone: {preset.styleProfile.explanationTone}
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-ink/15 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)]">
         <CardHeader>

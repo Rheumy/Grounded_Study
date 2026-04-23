@@ -5,11 +5,18 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  PRESETS_IN_DISPLAY_ORDER,
+  resolvePreset,
+  type PresetKey
+} from "@/lib/llm/presets";
 
 export function StyleProfileForm() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | "">("");
+  const [guidanceText, setGuidanceText] = useState("");
   const router = useRouter();
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -46,6 +53,8 @@ export function StyleProfileForm() {
     }
 
     formEl.reset();
+    setSelectedPresetKey("");
+    setGuidanceText("");
     setStatus("Saved. Your question style is ready to use.");
     router.refresh();
   };
@@ -53,6 +62,32 @@ export function StyleProfileForm() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div className="grid gap-4">
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-ink">Start from a preset</span>
+          <select
+            className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm text-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-accent"
+            value={selectedPresetKey}
+            onChange={(event) => {
+              const nextKey = event.target.value as PresetKey | "";
+              setSelectedPresetKey(nextKey);
+              const preset = resolvePreset(nextKey);
+              if (preset) {
+                setGuidanceText(preset.starterGuidance);
+              }
+            }}
+          >
+            <option value="">Start from scratch</option>
+            {PRESETS_IN_DISPLAY_ORDER.map((preset) => (
+              <option key={preset.key} value={preset.key}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-ink/55">
+            Optional. Choosing a preset fills the guidance box so you can customize from a ready-made starting point.
+          </p>
+        </label>
+
         <label className="space-y-2">
           <span className="text-sm font-medium text-ink">What exam or course are you studying for?</span>
           <Input
@@ -68,6 +103,8 @@ export function StyleProfileForm() {
           <Textarea
             name="guidanceText"
             rows={10}
+            value={guidanceText}
+            onChange={(event) => setGuidanceText(event.target.value)}
             placeholder="e.g. Advanced exam-style questions with applied reasoning, or paste example questions, model answers, and marking guides"
           />
         </label>
