@@ -160,4 +160,69 @@ describe("question generator citation handling", () => {
     );
     expect(fuzzyChunk.content.includes(result.citations[0]?.excerpt ?? "")).toBe(true);
   });
+
+  it("shuffles MCQ options while preserving the canonical answer text", async () => {
+    const randomValues = [
+      0.99, 0.99, 0.99,
+      0.99, 0.99, 0,
+      0.99, 0, 0.99,
+      0, 0.99, 0.99
+    ];
+    let randomCallCount = 0;
+    const randomSpy = vi.spyOn(Math, "random").mockImplementation(() => {
+      const value = randomValues[randomCallCount % randomValues.length] ?? 0.5;
+      randomCallCount += 1;
+      return value;
+    });
+
+    createCompletionMock.mockResolvedValue(
+      buildResponse({
+        type: "MCQ",
+        stem: "Which CRISPR-Cas9 detail is supported for the system described in the source?",
+        options: [
+          "Seed-region complementarity near the PAM",
+          "PAM recognition is unnecessary once guide RNA binds",
+          "Distal mismatches completely prevent every cleavage event",
+          "Cas9 cuts RNA targets more efficiently than DNA targets"
+        ],
+        answer: "Seed-region complementarity near the PAM",
+        rationale:
+          "The source states that efficient cleavage required seed-region complementarity near the PAM.",
+        citations: [
+          {
+            chunkId: "chunk-2",
+            excerpt: "seed-region complementarity near the PAM was required for efficient cleavage",
+            page: 7
+          }
+        ],
+        difficulty: 3
+      })
+    );
+
+    const positions = new Set<number>();
+    const mcqChunk = {
+      id: "chunk-2",
+      content:
+        "In the described system, seed-region complementarity near the PAM was required for efficient cleavage, while some distal mismatches were tolerated.",
+      page: 7
+    };
+
+    try {
+      for (let index = 0; index < 100; index += 1) {
+        const result = await generateQuestion({
+          styleProfile: { assumedBackgroundLevel: "specialist" },
+          difficulty: 3,
+          questionType: "MCQ",
+          chunks: [mcqChunk]
+        });
+
+        expect(result.options).toContain(result.answer);
+        positions.add(result.options?.indexOf(result.answer) ?? -1);
+      }
+    } finally {
+      randomSpy.mockRestore();
+    }
+
+    expect([...positions].sort()).toEqual([0, 1, 2, 3]);
+  });
 });

@@ -591,6 +591,15 @@ function canonicalizeMcqAnswer(answer: string, options: string[]): string {
   return matchedOption ?? trimmed;
 }
 
+function shuffleOptions(options: string[]): string[] {
+  const shuffled = [...options];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 function canonicalizeTrueFalseAnswer(answer: string): string {
   const normalized = collapseWhitespace(answer).toLowerCase();
   if (["true", "t", "yes"].includes(normalized)) return "True";
@@ -834,6 +843,11 @@ function normalizeRawQuestion(
 
   if (type === "MCQ" && options) {
     answer = canonicalizeMcqAnswer(answer, options);
+    options = shuffleOptions(options);
+    logger.info(
+      { questionType: "MCQ", correctAnswerPosition: options.indexOf(answer) },
+      "MCQ options shuffled"
+    );
   }
 
   if (type === "TRUE_FALSE") {
