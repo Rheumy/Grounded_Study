@@ -347,6 +347,7 @@ Rules:
 - the stem must be a declarative statement
 - avoid trivial negation traps
 - avoid statements that are technically ambiguous
+- balance truth values across a session. Do not default to true propositions. A well-crafted false statement should be just as learning-valuable as a true one. If the source material lends itself naturally to a true statement, consider whether a false statement involving a clear grounded distinction, exception, incorrect mechanism, wrong timing, or wrong qualifier would be equally educational
 - only use TRUE_FALSE when the source supports a clearly decidable statement
 - reject statements whose truth value depends on missing context, omitted qualifiers, or unstated assumptions
 - do not use document-structure statements or metadata statements as the proposition being tested
