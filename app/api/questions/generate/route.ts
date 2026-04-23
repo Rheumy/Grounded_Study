@@ -3,6 +3,10 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { resolveUserGenerationCaps } from "@/lib/billing/generation-limits";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestions, type TypeMix } from "@/lib/llm/generate";
+import {
+  DEFAULT_QUESTION_STYLE_PRESET_KEY,
+  resolvePreset
+} from "@/lib/llm/presets";
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
@@ -16,10 +20,32 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const documentIds: string[] = body.documentIds ?? [];
   const styleProfileId: string | null = body.styleProfileId ?? null;
+  const presetKey =
+    typeof body.presetKey === "string" && body.presetKey.trim().length > 0
+      ? body.presetKey.trim()
+      : null;
   const difficulty = Math.min(5, Math.max(1, Number(body.difficulty ?? 3)));
+
+  if (presetKey && styleProfileId) {
+    return NextResponse.json(
+      { error: "Provide either a preset or a saved profile, not both" },
+      { status: 400 }
+    );
+  }
+
+  const resolvedPreset = styleProfileId
+    ? null
+    : resolvePreset(presetKey ?? DEFAULT_QUESTION_STYLE_PRESET_KEY);
+
+  if (!styleProfileId && !resolvedPreset) {
+    return NextResponse.json({ error: "Unknown question style preset" }, { status: 400 });
+  }
+
   logger.info(
     {
-      userId: user.id
+      userId: user.id,
+      styleProfileId,
+      presetKey: resolvedPreset?.key ?? presetKey
     },
     "Generate questions request received"
   );
@@ -107,6 +133,7 @@ export async function POST(request: Request) {
         selectedDocumentIds: documentIds,
         readyDocumentCount: documents.length,
         styleProfileId,
+        presetKey: resolvedPreset?.key ?? null,
         difficulty,
         requestedCount: count,
         typeMix
@@ -118,6 +145,7 @@ export async function POST(request: Request) {
       ownerId: user.id,
       documentIds: documents.map((doc) => doc.id),
       styleProfileId,
+      presetStyleProfile: resolvedPreset,
       difficulty,
       count,
       typeMix
@@ -133,6 +161,7 @@ export async function POST(request: Request) {
         userId: user.id,
         readyDocumentCount: documents.length,
         styleProfileId,
+        presetKey: resolvedPreset?.key ?? null,
         difficulty,
         requestedCount: count,
         passedCount: passed,
@@ -157,6 +186,7 @@ export async function POST(request: Request) {
         userId: user.id,
         selectedDocumentIds: documentIds,
         styleProfileId,
+        presetKey: resolvedPreset?.key ?? null,
         difficulty,
         requestedCount: count,
         typeMix,

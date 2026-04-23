@@ -5,6 +5,7 @@ import {
   normalizeAssumedBackgroundLevel,
   type AssumedBackgroundLevel
 } from "@/lib/llm/schemas/style-profile";
+import type { QuestionStylePreset } from "@/lib/llm/presets";
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
 import {
   getEducationalChunkScore,
@@ -389,6 +390,7 @@ export async function generateQuestions(params: {
   ownerId: string;
   documentIds: string[];
   styleProfileId: string | null;
+  presetStyleProfile?: QuestionStylePreset | null;
   difficulty: number;
   count: number;
   typeMix?: TypeMix | null;
@@ -398,6 +400,7 @@ export async function generateQuestions(params: {
       ownerId: params.ownerId,
       documentCount: params.documentIds.length,
       styleProfileId: params.styleProfileId,
+      presetKey: params.presetStyleProfile?.key ?? null,
       difficulty: params.difficulty,
       requestedCount: params.count,
       typeMix: params.typeMix ?? null
@@ -405,7 +408,9 @@ export async function generateQuestions(params: {
     "Generation started"
   );
 
-  const styleProfile = params.styleProfileId
+  const styleProfile = params.presetStyleProfile
+    ? null
+    : params.styleProfileId
     ? await prisma.styleProfile.findFirst({
         where: { id: params.styleProfileId, ownerId: params.ownerId }
       })
@@ -419,8 +424,15 @@ export async function generateQuestions(params: {
   const profileSchema = styleProfile?.schemaJson as
     | { questionTypeDistribution?: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } }
     | null;
-  const profileDistribution = profileSchema?.questionTypeDistribution ?? null;
-  const generationStyleProfile = buildGenerationStyleProfile(styleProfile);
+  const presetDistribution = params.presetStyleProfile?.styleProfile.questionTypeDistribution ?? null;
+  const profileDistribution = presetDistribution ?? profileSchema?.questionTypeDistribution ?? null;
+  const generationStyleProfile = params.presetStyleProfile
+    ? buildGenerationStyleProfile({
+        name: params.presetStyleProfile.label,
+        schemaJson: params.presetStyleProfile.styleProfile as Prisma.JsonValue,
+        instructionsText: null
+      })
+    : buildGenerationStyleProfile(styleProfile);
   const assumedBackgroundLevel = normalizeAssumedBackgroundLevel(
     generationStyleProfile.assumedBackgroundLevel
   );
