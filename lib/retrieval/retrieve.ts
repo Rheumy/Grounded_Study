@@ -11,6 +11,10 @@ export type RetrievedChunk = {
   chunkIndex: number;
 };
 
+type RetrievedChunkCandidate = RetrievedChunk & {
+  distance: number;
+};
+
 function countMatches(value: string, pattern: RegExp): number {
   const matches = value.match(pattern);
   return matches ? matches.length : 0;
@@ -100,6 +104,10 @@ export function getEducationalChunkScore(content: string): number {
   return Math.max(0, score);
 }
 
+export function applyChunkUsagePenalty(similarityScore: number, usageCount: number): number {
+  return similarityScore * 0.5 ** usageCount;
+}
+
 export async function retrieveChunks(params: {
   query: string;
   documentIds: string[];
@@ -134,18 +142,73 @@ export async function retrieveChunks(params: {
   }
 
   const ids = Prisma.join(params.documentIds);
-  const results = await prisma.$queryRaw<RetrievedChunk[]>`
-    SELECT "id", "documentId", "content", "page", "chunkIndex"
+  const results = await prisma.$queryRaw<RetrievedChunkCandidate[]>`
+    SELECT
+      "id",
+      "documentId",
+      "content",
+      "page",
+      "chunkIndex",
+      ("embedding" <-> ${vectorLiteral}::vector)::double precision AS "distance"
     FROM "DocumentChunk"
     WHERE "documentId" IN (${ids})
     ORDER BY "embedding" <-> ${vectorLiteral}::vector
     LIMIT ${candidateLimit}
   `;
 
+  let rankedResults = results;
+
+  if (params.userId && results.length > 0) {
+    const usageCounts = await prisma.chunkUsage.groupBy({
+      by: ["chunkId"],
+      where: {
+        userId: params.userId,
+        documentId: { in: params.documentIds },
+        chunkId: { in: results.map((chunk) => chunk.id) }
+      },
+      _count: {
+        _all: true
+      }
+    });
+    const usageCountByChunkId = new Map(
+      usageCounts.map((row) => [row.chunkId, row._count._all])
+    );
+    const usedChunkCount = results.filter((chunk) => (usageCountByChunkId.get(chunk.id) ?? 0) > 0)
+      .length;
+
+    rankedResults = [...results].sort((left, right) => {
+      const leftPenalizedScore = applyChunkUsagePenalty(
+        1 / (1 + left.distance),
+        usageCountByChunkId.get(left.id) ?? 0
+      );
+      const rightPenalizedScore = applyChunkUsagePenalty(
+        1 / (1 + right.distance),
+        usageCountByChunkId.get(right.id) ?? 0
+      );
+
+      if (rightPenalizedScore !== leftPenalizedScore) {
+        return rightPenalizedScore - leftPenalizedScore;
+      }
+
+      return left.distance - right.distance;
+    });
+
+    logger.info(
+      {
+        documentCount: params.documentIds.length,
+        candidatesEvaluated: results.length,
+        usedChunkCount
+      },
+      "Retrieval applied chunk usage penalty"
+    );
+  }
+
   const filteredResults: RetrievedChunk[] = [];
   let filteredChunkCount = 0;
 
-  for (const chunk of results) {
+  for (const candidate of rankedResults) {
+    const { distance: _distance, ...chunk } = candidate;
+
     if (getNonEducationalChunkReason(chunk.content)) {
       filteredChunkCount += 1;
       continue;
