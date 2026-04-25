@@ -10,6 +10,47 @@ import {
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
+const HEAVY_DOCUMENT_USAGE_WARNING_THRESHOLD = 25;
+const HEAVY_DOCUMENT_USAGE_WARNING =
+  "You've generated many questions from this material. Consider uploading more sources for greater variety.";
+
+async function getHeavyDocumentUsageWarning(params: { userId: string; documentIds: string[] }) {
+  if (params.documentIds.length === 0) {
+    return null;
+  }
+
+  try {
+    const usageByQuestion = await prisma.chunkUsage.groupBy({
+      by: ["documentId", "questionId"],
+      where: {
+        userId: params.userId,
+        documentId: { in: params.documentIds }
+      }
+    });
+    const questionCountByDocumentId = usageByQuestion.reduce((counts, row) => {
+      counts.set(row.documentId, (counts.get(row.documentId) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
+    return [...questionCountByDocumentId.values()].some(
+      (questionCount) => questionCount > HEAVY_DOCUMENT_USAGE_WARNING_THRESHOLD
+    )
+      ? HEAVY_DOCUMENT_USAGE_WARNING
+      : null;
+  } catch (error) {
+    logger.warn(
+      {
+        userId: params.userId,
+        documentIds: params.documentIds,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      "Failed to compute heavy document usage warning"
+    );
+
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   const requestStartedAt = Date.now();
   const user = await requireUserApi();
@@ -155,6 +196,10 @@ export async function POST(request: Request) {
     const insufficientEvidence = results.filter(
       (result) => result.status === "INSUFFICIENT_EVIDENCE"
     ).length;
+    const warning = await getHeavyDocumentUsageWarning({
+      userId: user.id,
+      documentIds: documents.map((doc) => doc.id)
+    });
     await incrementUsage({ userId: user.id, questions: passed });
     logger.info(
       {
@@ -177,7 +222,8 @@ export async function POST(request: Request) {
         requestedCount: count,
         passedCount: passed,
         failedCount: results.length - passed
-      }
+      },
+      ...(warning ? { warning } : {})
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";

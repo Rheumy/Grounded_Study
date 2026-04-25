@@ -65,6 +65,7 @@ export function GenerateForm({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
@@ -94,6 +95,7 @@ export function GenerateForm({
     setError(null);
     setSummary(null);
     setStatus(null);
+    setWarning(null);
     if (styleSelectionMode === "custom" && !selectedStyleProfileId) {
       setError("Choose a saved custom style or use one of the built-in styles.");
       return;
@@ -124,6 +126,7 @@ export function GenerateForm({
       const body = await response.json().catch(() => ({} as {
         results?: GenerationResult[];
         summary?: GenerationSummary;
+        warning?: string;
       }));
       const results = Array.isArray(body.results) ? (body.results as GenerationResult[]) : [];
       const passedCount = body.summary?.passedCount ?? results.filter((r) => r.status === "PASSED").length;
@@ -137,6 +140,7 @@ export function GenerateForm({
         failedCount,
         primaryFailureReason
       });
+      setWarning(typeof body.warning === "string" ? body.warning : null);
       setStatus(null);
     } catch {
       setError("Generation failed. Please try again.");
@@ -354,6 +358,11 @@ export function GenerateForm({
               </p>
             )}
           </div>
+          {warning ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm text-ink/75">{warning}</p>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             {summary.passedCount > 0 ? (
@@ -373,6 +382,7 @@ export function GenerateForm({
                 setSummary(null);
                 setError(null);
                 setStatus(null);
+                setWarning(null);
               }}
             >
               Generate more questions

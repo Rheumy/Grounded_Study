@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { generateQuestion, type RetrievalChunk } from "@/lib/llm/question-generator";
+import { generateQuestion } from "@/lib/llm/question-generator";
 import {
   normalizeAssumedBackgroundLevel,
   type AssumedBackgroundLevel
@@ -10,7 +10,8 @@ import { verifyQuestion } from "@/lib/llm/verifier/verifier";
 import {
   getEducationalChunkScore,
   getNonEducationalChunkReason,
-  retrieveChunks
+  retrieveChunks,
+  type RetrievedChunk
 } from "@/lib/retrieval/retrieve";
 import { logger } from "@/lib/observability/logger";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
@@ -45,7 +46,7 @@ function buildChunkUsageRows(params: {
   ownerId: string;
   questionId: string;
   citations: { chunkId: string }[];
-  chunks: RetrievalChunk[];
+  chunks: RetrievedChunk[];
 }) {
   const documentIdByChunkId = new Map(params.chunks.map((chunk) => [chunk.id, chunk.documentId]));
 
@@ -120,7 +121,7 @@ function extractQuerySnippet(content: string, strategy: RetryStrategy): string {
   return collapsed.slice(start, start + 220);
 }
 
-function buildNarrowRetryQuery(sourceChunks: RetrievalChunk[]): string | null {
+function buildNarrowRetryQuery(sourceChunks: RetrievedChunk[]): string | null {
   if (sourceChunks.length === 0) {
     return null;
   }
@@ -140,7 +141,7 @@ function buildNarrowRetryQuery(sourceChunks: RetrievalChunk[]): string | null {
   return extractQuerySnippet(bestChunk.chunk.content, "narrow_source_specific");
 }
 
-function rankChunksForRetry(chunks: RetrievalChunk[]): RetrievalChunk[] {
+function rankChunksForRetry(chunks: RetrievedChunk[]): RetrievedChunk[] {
   return [...chunks].sort((left, right) => {
     const leftScore =
       getSourceSpecificSignalScore(left.content) * 3 + getEducationalChunkScore(left.content);
@@ -163,14 +164,14 @@ async function getRandomChunkSnippet(params: {
   const sampleLimit = strategy === "narrow_source_specific" ? 24 : 12;
   const chunks =
     excludeChunkIds.length > 0
-      ? await prisma.$queryRaw<RetrievalChunk[]>`
+      ? await prisma.$queryRaw<RetrievedChunk[]>`
           SELECT "id", "documentId", "content", "page", "chunkIndex"
           FROM "DocumentChunk"
           WHERE "documentId" IN (${ids}) AND "id" NOT IN (${Prisma.join(excludeChunkIds)})
           ORDER BY random()
           LIMIT ${sampleLimit}
         `
-      : await prisma.$queryRaw<RetrievalChunk[]>`
+      : await prisma.$queryRaw<RetrievedChunk[]>`
           SELECT "id", "documentId", "content", "page", "chunkIndex"
           FROM "DocumentChunk"
           WHERE "documentId" IN (${ids})
@@ -483,11 +484,11 @@ export async function generateQuestions(params: {
     let retryMode: RetryMode = "initial_retrieval";
     let retryStrategy: RetryStrategy = "default";
     let currentQuery = "";
-    let currentChunks: RetrievalChunk[] = [];
+    let currentChunks: RetrievedChunk[] = [];
     let maxAttempts = MAX_RETRIES;
     let outsiderRetryBonusGranted = false;
     let narrowRetryReason: string | null = null;
-    let narrowRetrySourceChunks: RetrievalChunk[] = [];
+    let narrowRetrySourceChunks: RetrievedChunk[] = [];
 
     for (let attempt = 0; attempt < maxAttempts && !saved; attempt += 1) {
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
