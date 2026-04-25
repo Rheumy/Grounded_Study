@@ -41,6 +41,41 @@ function normalizeSpace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function buildChunkUsageRows(params: {
+  ownerId: string;
+  questionId: string;
+  citations: { chunkId: string }[];
+  chunks: RetrievalChunk[];
+}) {
+  const documentIdByChunkId = new Map(params.chunks.map((chunk) => [chunk.id, chunk.documentId]));
+
+  return [...new Set(params.citations.map((citation) => citation.chunkId))]
+    .map((chunkId) => {
+      const documentId = documentIdByChunkId.get(chunkId);
+
+      if (!documentId) {
+        return null;
+      }
+
+      return {
+        userId: params.ownerId,
+        documentId,
+        chunkId,
+        questionId: params.questionId
+      };
+    })
+    .filter(
+      (
+        row
+      ): row is {
+        userId: string;
+        documentId: string;
+        chunkId: string;
+        questionId: string;
+      } => row !== null
+    );
+}
+
 function getSourceSpecificSignalScore(content: string): number {
   const normalized = normalizeSpace(content).toLowerCase();
 
@@ -783,6 +818,35 @@ export async function generateQuestions(params: {
         },
         "Question DB save completed"
       );
+
+      const chunkUsageRows = buildChunkUsageRows({
+        ownerId: params.ownerId,
+        questionId: record.id,
+        citations: generated.citations,
+        chunks: currentChunks
+      });
+
+      if (chunkUsageRows.length > 0) {
+        try {
+          await prisma.chunkUsage.createMany({
+            data: chunkUsageRows
+          });
+        } catch (chunkUsageError) {
+          logger.warn(
+            {
+              ownerId: params.ownerId,
+              questionId: record.id,
+              questionType,
+              trackedChunkCount: chunkUsageRows.length,
+              error:
+                chunkUsageError instanceof Error
+                  ? chunkUsageError.message
+                  : String(chunkUsageError)
+            },
+            "Question saved but chunk usage tracking failed"
+          );
+        }
+      }
 
       results.push({ questionId: record.id, status: "PASSED" });
       saved = true;

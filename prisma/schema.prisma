@@ -244,6 +244,18 @@ model Question {
   @@index([difficulty])
 }
 
+model ChunkUsage {
+  id         String   @id @default(cuid())
+  userId     String
+  documentId String
+  chunkId    String
+  questionId String
+  usedAt     DateTime @default(now())
+
+  @@index([userId, documentId])
+  @@index([chunkId])
+}
+
 model QuestionExposure {
   id             String               @id @default(cuid())
   userId         String

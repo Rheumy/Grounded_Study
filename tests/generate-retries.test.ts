@@ -8,6 +8,9 @@ vi.mock("@/lib/db/prisma", () => ({
     },
     question: {
       create: vi.fn()
+    },
+    chunkUsage: {
+      createMany: vi.fn()
     }
   }
 }));
@@ -89,6 +92,7 @@ describe("generation retries", () => {
     (prisma.$queryRaw as any).mockResolvedValue([seedChunk]);
     (prisma.styleProfile.findFirst as any).mockResolvedValue(null);
     (prisma.question.create as any).mockResolvedValue({ id: "question-1" });
+    (prisma.chunkUsage.createMany as any).mockResolvedValue({ count: 1 });
   });
 
   it("reuses the same retrieval when generation fails with malformed model output", async () => {
@@ -172,6 +176,46 @@ describe("generation retries", () => {
     expect((verifyQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
       "specialist"
     );
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("records one chunk-usage row per cited chunk after saving a question", async () => {
+    (retrieveChunks as any).mockResolvedValue([chunkA, chunkB]);
+    (generateQuestion as any).mockResolvedValue(
+      buildGeneratedQuestion("chunk-a", {
+        citations: [
+          { chunkId: "chunk-a", excerpt: "Evidence A", page: 1 },
+          { chunkId: "chunk-b", excerpt: "Evidence B", page: 2 },
+          { chunkId: "chunk-a", excerpt: "Evidence A again", page: 1 }
+        ]
+      })
+    );
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 2,
+      count: 1
+    });
+
+    expect(prisma.chunkUsage.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          userId: "user-1",
+          documentId: "doc-1",
+          chunkId: "chunk-a",
+          questionId: "question-1"
+        },
+        {
+          userId: "user-1",
+          documentId: "doc-1",
+          chunkId: "chunk-b",
+          questionId: "question-1"
+        }
+      ]
+    });
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
 
