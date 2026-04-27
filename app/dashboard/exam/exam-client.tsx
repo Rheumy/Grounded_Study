@@ -294,11 +294,14 @@ export function ExamClient() {
               </div>
             </div>
           </div>
+          <p className="text-xs text-ink/55">
+            Beta supports multiple choice and true/false. More types coming.
+          </p>
           <div className="rounded-2xl border border-accent/20 bg-accentSoft/40 p-4">
-            <p className="text-sm font-medium text-ink">Short-answer grading note</p>
+            <p className="text-sm font-medium text-ink">Question type note</p>
             <p className="mt-1 text-sm text-ink/65">
-              If your exam includes short-answer questions, feedback is strongest when the underlying
-              question style included marking guides, model answers, or rubrics.
+              Historical short-answer reviews remain available, but new mock exams currently use the
+              supported objective question types only.
             </p>
           </div>
           <Button onClick={startExam} className="shadow-sm">Start mock exam</Button>

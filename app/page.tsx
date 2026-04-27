@@ -1,69 +1,62 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { HomepageDemo } from "@/components/home/homepage-demo";
+import { MarketingFooter } from "@/components/legal/marketing-footer";
 
 export default function HomePage() {
+  const features = [
+    {
+      number: "01",
+      title: "Cited, not made up.",
+      description: "Every question links back to the page it came from."
+    },
+    {
+      number: "02",
+      title: "Verified before you see it.",
+      description: "A second pass blocks unsupported or ambiguous questions."
+    },
+    {
+      number: "03",
+      title: "Built for real exams.",
+      description: "Difficulty tuning that mirrors how board and entrance exams actually test."
+    }
+  ];
+
   return (
     <div className="space-y-16">
-      <section className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
+      <section className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <div className="space-y-6">
-          <Badge>Grounded practice, less hallucination</Badge>
+          <Badge>Private beta</Badge>
           <h1 className="text-4xl font-semibold text-ink sm:text-5xl">
-            Turn your textbooks and notes into verified practice exams.
+            Practice questions from your own notes.
           </h1>
           <p className="text-lg text-ink/70">
-            Grounded Study ingests your PDFs and screenshots, builds a citation-backed knowledge base, and
-            generates practice questions that always cite their sources.
+            Upload your PDFs. Get exam questions that cite the page they came from. Every answer is
+            checked before you see it.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link href="/signin">
-              <Button size="lg">Get started</Button>
+            <Link href="/auth/signin">
+              <Button size="lg">Start free</Button>
             </Link>
             <Link href="/pricing">
               <Button variant="outline" size="lg">See plans</Button>
             </Link>
           </div>
         </div>
-        <Card className="border-accent/20 bg-gradient-to-br from-white to-accentSoft">
-          <CardHeader>
-            <CardTitle>Evidence-first generation</CardTitle>
-            <CardDescription>
-              Every question stores citations and a verifier pass. If evidence is missing, we regenerate or
-              mark it as insufficient.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-ink/70">
-            <p>Upload PDFs, slides, screenshots, or handwritten notes.</p>
-            <p>Control difficulty with Bloom-level and distractor tuning.</p>
-            <p>Practice questions, mock exams, progress tracking, and spaced revision.</p>
-          </CardContent>
-        </Card>
+        <HomepageDemo />
       </section>
 
-      <section className="grid gap-6 md:grid-cols-3">
-        {[
-          {
-            title: "Grounded Retrieval",
-            description: "Vector search over pgvector with strict citations on every answer."
-          },
-          {
-            title: "Verification Pass",
-            description: "LLM verifier blocks unsupported questions before they reach students."
-          },
-          {
-            title: "Secure by Default",
-            description: "Private storage, strict file validation, rate limits, and audit logs."
-          }
-        ].map((feature) => (
-          <Card key={feature.title}>
-            <CardHeader>
-              <CardTitle>{feature.title}</CardTitle>
-              <CardDescription>{feature.description}</CardDescription>
-            </CardHeader>
-          </Card>
+      <section className="grid gap-4 md:grid-cols-3">
+        {features.map((feature) => (
+          <div key={feature.number} className="rounded-3xl border border-ink/10 bg-fog p-6">
+            <h2 className="text-xl font-semibold text-ink">{`${feature.number} — ${feature.title}`}</h2>
+            <p className="mt-3 text-sm leading-6 text-ink/70">{feature.description}</p>
+          </div>
         ))}
       </section>
+
+      <MarketingFooter />
     </div>
   );
 }

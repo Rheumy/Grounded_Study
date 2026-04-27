@@ -27,6 +27,10 @@ Optional:
 - `CRON_INGESTION_BATCH_SIZE` (only needed if you later enable scheduled cron processing)
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_ENABLED=true`
+- `BETA_ALLOWED_EMAILS` (comma-separated private-beta allowlist for Google and magic-link sign-in)
+- `RESEND_API_KEY`
+- `EMAIL_FROM` (for example `Grounded Study <login@sulcai.com>`)
+- `NEXT_PUBLIC_EMAIL_AUTH_ENABLED=true` (shows the magic-link button and enables the email provider)
 
 ## 4. Deploy
 

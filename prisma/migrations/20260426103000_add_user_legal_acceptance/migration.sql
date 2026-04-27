@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "legalAcceptedAt" TIMESTAMP(3),
+ADD COLUMN "legalVersion" TEXT NOT NULL DEFAULT 'v1-2026-04';

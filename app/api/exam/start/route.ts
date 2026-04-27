@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
+import { VISIBLE_QUESTION_TYPES } from "@/lib/constants/question-types";
 import {
   buildFeedbackExcludedQuestionFilter,
   buildHiddenQuestionFilter,
@@ -34,6 +35,9 @@ export async function POST(request: Request) {
     {
       ownerId: user.id,
       verifierStatus: "PASSED",
+      type: {
+        in: [...VISIBLE_QUESTION_TYPES]
+      },
       ...(difficulty ? { difficulty } : {})
     },
     buildFeedbackExcludedQuestionFilter(user.id),

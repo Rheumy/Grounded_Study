@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { QUESTION_TYPE_LABELS, VISIBLE_QUESTION_TYPES } from "@/lib/constants/question-types";
 import {
   DEFAULT_QUESTION_STYLE_PRESET_KEY,
   PRESETS_IN_DISPLAY_ORDER,
@@ -75,6 +76,18 @@ export function GenerateForm({
     DEFAULT_QUESTION_STYLE_PRESET_KEY
   );
   const [selectedStyleProfileId, setSelectedStyleProfileId] = useState<string>("");
+  const visibleProfiles = profiles.filter((profile) => {
+    if (!profile.distribution) {
+      return true;
+    }
+
+    return VISIBLE_QUESTION_TYPES.some((type) => (profile.distribution?.[type] ?? 0) > 0);
+  });
+  const visiblePresets = PRESETS_IN_DISPLAY_ORDER.filter((preset) =>
+    VISIBLE_QUESTION_TYPES.some(
+      (type) => (preset.styleProfile.questionTypeDistribution?.[type] ?? 0) > 0
+    )
+  );
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -82,13 +95,20 @@ export function GenerateForm({
     );
   };
 
-  const selectedProfile = profiles.find((profile) => profile.id === selectedStyleProfileId) ?? null;
-  const selectedPreset = resolvePreset(selectedPresetKey) ?? PRESETS_IN_DISPLAY_ORDER[0];
+  const selectedProfile =
+    visibleProfiles.find((profile) => profile.id === selectedStyleProfileId) ?? null;
+  const selectedPreset = (() => {
+    const resolved = resolvePreset(selectedPresetKey);
+    if (resolved && visiblePresets.some((preset) => preset.key === resolved.key)) {
+      return resolved;
+    }
+
+    return visiblePresets[0] ?? PRESETS_IN_DISPLAY_ORDER[0];
+  })();
   const activeDistribution =
     styleSelectionMode === "custom"
       ? selectedProfile?.distribution ?? null
       : selectedPreset.styleProfile.questionTypeDistribution;
-  const shortAnswerGuidanceVisible = (activeDistribution?.SHORT_ANSWER ?? 0) > 0;
   const customStyleMissing = styleSelectionMode === "custom" && !selectedStyleProfileId;
 
   const submit = async () => {
@@ -159,8 +179,11 @@ export function GenerateForm({
         <p className="text-sm text-ink/60">
           Start with a built-in style, or choose a saved custom style if you want a more exam-specific setup.
         </p>
+        <p className="text-xs text-ink/55">
+          Beta supports multiple choice and true/false. More types coming.
+        </p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {PRESETS_IN_DISPLAY_ORDER.map((preset) => {
+          {visiblePresets.map((preset) => {
             const isSelected =
               styleSelectionMode === "preset" && selectedPreset.key === preset.key;
             return (
@@ -178,7 +201,13 @@ export function GenerateForm({
                     : "border-ink/10 bg-white hover:bg-ink/[0.02]"
                 }`}
               >
-                <p className="text-sm font-medium text-ink">{preset.label}</p>
+                <p className="text-sm font-medium text-ink">
+                  {QUESTION_TYPE_LABELS[
+                    VISIBLE_QUESTION_TYPES.find(
+                      (type) => (preset.styleProfile.questionTypeDistribution?.[type] ?? 0) > 0
+                    ) ?? "MCQ"
+                  ]}
+                </p>
                 <p className="text-xs text-ink/60">{preset.description}</p>
               </button>
             );
@@ -205,19 +234,24 @@ export function GenerateForm({
               Choose a saved Question Style created from your own examples. It shapes wording, level,
               and the question mix for this run.
             </p>
-            {profiles.length > 0 ? (
+            {visibleProfiles.length > 0 ? (
               <select
                 className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
                 value={selectedStyleProfileId}
                 onChange={(event) => setSelectedStyleProfileId(event.target.value)}
               >
                 <option value="">Select a saved custom style</option>
-                {profiles.map((profile) => (
+                {visibleProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
                     {profile.name}
                   </option>
                 ))}
               </select>
+            ) : profiles.length > 0 ? (
+              <p className="text-sm text-ink/65">
+                Your saved Question Styles currently lean on hidden beta-only question types. Create a
+                new one for multiple choice or true/false if you want to use a custom style here.
+              </p>
             ) : (
               <p className="text-sm text-ink/65">
                 No saved Question Styles yet.{" "}
@@ -300,12 +334,6 @@ export function GenerateForm({
         ) : selectedProfile?.distribution ? (
           <p className="text-xs text-ink/55">
             This style decides the question mix for this run based on the saved profile.
-          </p>
-        ) : null}
-        {shortAnswerGuidanceVisible ? (
-          <p className="text-xs text-ink/55">
-            Short-answer feedback is strongest when your materials or saved question style include model
-            answers, marking guides, or rubrics. Without them, grading is still best-effort.
           </p>
         ) : null}
       </div>

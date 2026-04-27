@@ -4,26 +4,19 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/db/prisma";
+import {
+  isBetaEmailAllowed,
+  isEmailAuthEnabled,
+  maskEmail,
+  normalizeEmailIdentifier
+} from "@/lib/auth/email-access";
 import { safeSendVerificationRequest } from "@/lib/auth/email";
 import { logger } from "@/lib/observability/logger";
 
 const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+const emailAuthEnabled = isEmailAuthEnabled();
 const devBypassEnabled =
   process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_BYPASS === "true";
-
-function getBetaAllowedEmails(): Set<string> | null {
-  const raw = process.env.BETA_ALLOWED_EMAILS;
-  if (!raw?.trim()) {
-    return null;
-  }
-
-  const emails = raw
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-
-  return emails.length > 0 ? new Set(emails) : null;
-}
 
 export const authOptions: NextAuthOptions = {
   // @ts-expect-error - NextAuth and PrismaAdapter types often mismatch slightly
@@ -31,13 +24,20 @@ export const authOptions: NextAuthOptions = {
   // NextAuth forces "jwt" strategy when using a Credentials Provider
   session: { strategy: "jwt" },
   pages: {
-    signIn: "/signin"
+    signIn: "/auth/signin",
+    verifyRequest: "/auth/verify-request",
+    error: "/auth/signin"
   },
   providers: [
-    EmailProvider({
-      from: process.env.EMAIL_FROM ?? "no-reply@grounded-study.local",
-      sendVerificationRequest: safeSendVerificationRequest
-    }),
+    ...(emailAuthEnabled
+      ? [
+          EmailProvider({
+            from: process.env.EMAIL_FROM ?? "no-reply@grounded-study.local",
+            maxAge: 24 * 60 * 60,
+            sendVerificationRequest: safeSendVerificationRequest
+          })
+        ]
+      : []),
     ...(devBypassEnabled
       ? [
           CredentialsProvider({
@@ -73,21 +73,32 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider !== "google") {
+      if (!account || (account.provider !== "google" && account.provider !== "email")) {
         return true;
       }
 
-      const allowedEmails = getBetaAllowedEmails();
-      if (!allowedEmails) {
+      const rawEmail = user?.email ?? (account.type === "email" ? account.providerAccountId : null);
+      let normalizedEmail: string | null = null;
+
+      if (rawEmail) {
+        try {
+          normalizedEmail = normalizeEmailIdentifier(rawEmail);
+        } catch {
+          normalizedEmail = null;
+        }
+      }
+
+      if (isBetaEmailAllowed(normalizedEmail)) {
         return true;
       }
 
-      const email = user.email?.trim().toLowerCase();
-      if (email && allowedEmails.has(email)) {
-        return true;
-      }
-
-      logger.warn({ email: user.email ?? null }, "Blocked Google sign-in outside beta allowlist");
+      logger.warn(
+        {
+          email: maskEmail(normalizedEmail),
+          provider: account.provider
+        },
+        "Blocked sign-in outside beta allowlist"
+      );
       return "/auth/not-allowed";
     },
     // 1. Pass the user ID into the JWT token during sign in
@@ -110,7 +121,13 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async signIn(message) {
-      logger.info({ userId: message.user.id, email: message.user.email }, "User signed in");
+      logger.info(
+        {
+          userId: message.user.id,
+          email: maskEmail(message.user.email)
+        },
+        "User signed in"
+      );
     }
   },
   debug: process.env.NODE_ENV === "development"

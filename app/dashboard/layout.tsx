@@ -1,7 +1,10 @@
 import { getServerSession } from "next-auth/next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import { DashboardNav } from "@/app/dashboard/dashboard-nav";
+import { prisma } from "@/lib/db/prisma";
+import { LEGAL_CONSENT_COOKIE_NAME, LEGAL_VERSION } from "@/lib/constants/legal";
 
 const navItems = [
   { href: "/dashboard", label: "Overview" },
@@ -17,7 +20,38 @@ const navItems = [
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   if (!session) {
-    redirect("/signin");
+    redirect("/auth/signin");
+  }
+
+  const userId = (session.user as { id?: string } | undefined)?.id;
+  if (!userId) {
+    redirect("/auth/signin");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      legalAcceptedAt: true
+    }
+  });
+
+  if (!user) {
+    redirect("/auth/signin");
+  }
+
+  if (!user.legalAcceptedAt) {
+    const consentCookie = cookies().get(LEGAL_CONSENT_COOKIE_NAME)?.value;
+    if (consentCookie === LEGAL_VERSION) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          legalAcceptedAt: new Date(),
+          legalVersion: LEGAL_VERSION
+        }
+      });
+    } else {
+      redirect("/legal/accept");
+    }
   }
 
   const isAdmin = (session.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;

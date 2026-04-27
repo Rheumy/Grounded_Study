@@ -3,16 +3,20 @@ import { Prisma } from "@prisma/client";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 import {
+  VISIBLE_QUESTION_TYPES,
+  isVisibleQuestionType,
+  type QuestionType
+} from "@/lib/constants/question-types";
+import {
   buildFeedbackExcludedQuestionFilter,
   buildHiddenQuestionFilter,
   buildUnseenQuestionFilter,
   markQuestionsServed
 } from "@/lib/questions/exposure";
 
-const QUESTION_TYPES = ["MCQ", "SHORT_ANSWER", "TRUE_FALSE"] as const;
 const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
 
-type QuestionTypeFilter = (typeof QUESTION_TYPES)[number] | "ALL";
+type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = (typeof RECYCLE_MODES)[number];
 
 const NEW_QUESTION_ORDER = [
@@ -34,8 +38,8 @@ type PracticeQuestionDto = {
 };
 
 function parseQuestionType(value: string | null): QuestionTypeFilter {
-  if (value && QUESTION_TYPES.includes(value as (typeof QUESTION_TYPES)[number])) {
-    return value as QuestionTypeFilter;
+  if (value && isVisibleQuestionType(value)) {
+    return value;
   }
 
   return "ALL";
@@ -58,9 +62,7 @@ function buildEmptyMessage(questionType: QuestionTypeFilter, recycleMode: Recycl
   const typeLabel =
     questionType === "ALL"
       ? "practice"
-      : questionType === "SHORT_ANSWER"
-        ? "short-answer"
-        : questionType === "TRUE_FALSE"
+      : questionType === "TRUE_FALSE"
           ? "true/false"
           : "multiple-choice";
 
@@ -178,7 +180,13 @@ export async function GET(request: Request) {
     {
       ownerId: user.id,
       verifierStatus: "PASSED",
-      ...(questionType !== "ALL" ? { type: questionType } : {})
+      ...(questionType !== "ALL"
+        ? { type: questionType }
+        : {
+            type: {
+              in: [...VISIBLE_QUESTION_TYPES]
+            }
+          })
     }
   ];
   const browserHiddenQuestionFilter =

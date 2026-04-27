@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  QUESTION_TYPE_LABELS,
+  VISIBLE_QUESTION_TYPES,
+  type QuestionType
+} from "@/lib/constants/question-types";
 import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
 import {
   loadHiddenQuestionIds,
@@ -12,7 +17,6 @@ import {
   persistSuppressHideWarningPreference
 } from "@/lib/question-hiding/browser";
 
-type QuestionType = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
 type QuestionFeedbackLabel =
@@ -472,6 +476,9 @@ export function PracticeClient() {
             <label className="grid gap-2 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4">
               <span className="font-medium text-ink">Question type</span>
               <span className="text-xs text-ink/55">Choose one question type or practise a mixed set.</span>
+              <span className="text-xs text-ink/55">
+                Beta supports multiple choice and true/false. More types coming.
+              </span>
               <select
                 value={sessionConfig.questionType}
                 onChange={(event) =>
@@ -483,9 +490,11 @@ export function PracticeClient() {
                 className="h-10 rounded-md border border-ink/15 bg-white px-3 text-ink"
               >
                 <option value="ALL">All supported types</option>
-                <option value="MCQ">MCQ</option>
-                <option value="TRUE_FALSE">True/false</option>
-                <option value="SHORT_ANSWER">Short answer</option>
+                {VISIBLE_QUESTION_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {QUESTION_TYPE_LABELS[type]}
+                  </option>
+                ))}
               </select>
             </label>
 

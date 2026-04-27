@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { MarketingFooter } from "@/components/legal/marketing-footer";
 
 export default function PricingPage() {
   return (
@@ -21,7 +22,7 @@ export default function PricingPage() {
               <li>20 questions / day</li>
               <li>Practice + exam mode</li>
             </ul>
-            <Link href="/signin">
+            <Link href="/auth/signin">
               <Button variant="outline">Get started</Button>
             </Link>
           </CardContent>
@@ -43,6 +44,7 @@ export default function PricingPage() {
           </CardContent>
         </Card>
       </div>
+      <MarketingFooter />
     </div>
   );
 }

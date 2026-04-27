@@ -23,7 +23,7 @@ export async function SiteNav() {
           {session ? (
             <SignOutButton />
           ) : (
-            <Link href="/signin">
+            <Link href="/auth/signin">
               <Button size="sm">Sign in</Button>
             </Link>
           )}
