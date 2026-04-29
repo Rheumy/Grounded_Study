@@ -1,5 +1,10 @@
-import { claimNextIngestionJob, markJobCompleted, markJobFailed } from "@/lib/jobs/queue";
-import { processIngestionJob } from "@/lib/jobs/processor";
+import {
+  claimNextGenerationJob,
+  claimNextIngestionJob,
+  markJobCompleted,
+  markJobFailed
+} from "@/lib/jobs/queue";
+import { processGenerationJob, processIngestionJob } from "@/lib/jobs/processor";
 import { logger } from "@/lib/observability/logger";
 
 const POLL_INTERVAL_MS = 3000;
@@ -22,19 +27,31 @@ async function main() {
 
   while (shouldRun) {
     const job = await claimNextIngestionJob();
-    if (!job) {
+    if (job) {
+      logger.info({ jobId: job.id }, "Processing ingestion job");
+      try {
+        await processIngestionJob(job.id);
+        await markJobCompleted(job.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        logger.error({ jobId: job.id, message }, "Ingestion job failed");
+        await markJobFailed(job.id, message);
+      }
+      continue;
+    }
+
+    const generationJob = await claimNextGenerationJob();
+    if (!generationJob) {
       await sleep(POLL_INTERVAL_MS);
       continue;
     }
 
-    logger.info({ jobId: job.id }, "Processing ingestion job");
+    logger.info({ jobId: generationJob.id }, "Processing generation job");
     try {
-      await processIngestionJob(job.id);
-      await markJobCompleted(job.id);
+      await processGenerationJob(generationJob.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      logger.error({ jobId: job.id, message }, "Ingestion job failed");
-      await markJobFailed(job.id, message);
+      logger.error({ jobId: generationJob.id, message }, "Generation job failed");
     }
   }
 

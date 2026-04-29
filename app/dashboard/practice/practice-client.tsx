@@ -9,7 +9,11 @@ import {
   VISIBLE_QUESTION_TYPES,
   type QuestionType
 } from "@/lib/constants/question-types";
-import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
+import {
+  getShortAnswerReviewLabel,
+  sanitizeFeedbackText,
+  type ShortAnswerReviewStatus
+} from "@/lib/feedback/user-facing";
 import {
   loadHiddenQuestionIds,
   loadSuppressHideWarningPreference,
@@ -68,6 +72,16 @@ type AnsweredQuestion = {
   feedback: Feedback;
 };
 
+type GenerationJobProgress = {
+  jobId: string;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  currentPhase: string | null;
+  passedCount: number;
+  requestedCount: number;
+  errorMessage: string | null;
+  completedAt: string | null;
+};
+
 function normalizeSessionLength(value: number): number {
   if (!Number.isFinite(value)) return 5;
   return Math.min(50, Math.max(1, Math.round(value)));
@@ -80,6 +94,16 @@ function parseTags(value: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function sanitizeQuestion(question: Question | null): Question | null {
+  if (!question) return null;
+
+  return {
+    ...question,
+    stem: sanitizeFeedbackText(question.stem),
+    optionsJson: question.optionsJson?.map((option) => sanitizeFeedbackText(option)) ?? null
+  };
 }
 
 const recycleModeDescriptions: Record<RecycleMode, string> = {
@@ -159,6 +183,7 @@ export function PracticeClient() {
   const [hideWarningChoice, setHideWarningChoice] = useState(false);
   const [isHidingQuestion, setIsHidingQuestion] = useState(false);
   const [autoGenerationStatus, setAutoGenerationStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
+  const [autoGenerationProgress, setAutoGenerationProgress] = useState<GenerationJobProgress | null>(null);
 
   useEffect(() => {
     setHiddenQuestionIds(loadHiddenQuestionIds());
@@ -167,7 +192,10 @@ export function PracticeClient() {
     setHideWarningChoice(suppressWarning);
   }, []);
 
-  const currentQuestionNumber = results.length + (question ? 1 : 0);
+  const currentQuestionNumber = Math.min(
+    sessionConfig.sessionLength,
+    feedback ? results.length : results.length + (question ? 1 : 0)
+  );
   const isShortAnswer = question?.type === "SHORT_ANSWER";
   const shortAnswerReviewLabel = getShortAnswerReviewLabel(feedback?.reviewStatus ?? null);
   const isCorrect = feedback?.correct === true;
@@ -226,7 +254,7 @@ export function PracticeClient() {
       return;
     }
 
-    setQuestion(body.question ?? null);
+    setQuestion(sanitizeQuestion(body.question ?? null));
     setStatus(body.question ? null : body.message ?? "No questions available");
     setStartTime(Date.now());
     setQuestionFeedback(body.question?.userFeedback ?? null);
@@ -316,7 +344,7 @@ export function PracticeClient() {
             count: requestedCount
           })
         });
-        const body = await response.json().catch(() => ({}));
+        const body = await response.json().catch(() => ({} as { jobId?: string; error?: string }));
 
         if (cancelled) {
           return;
@@ -325,6 +353,52 @@ export function PracticeClient() {
         if (!response.ok) {
           setAutoGenerationStatus("error");
           setStatus(body.error ?? "We couldn't generate questions from this upload yet.");
+          return;
+        }
+
+        if (!body.jobId) {
+          setAutoGenerationStatus("error");
+          setStatus("We couldn't track this generation job.");
+          return;
+        }
+
+        setAutoGenerationProgress({
+          jobId: body.jobId,
+          status: "PENDING",
+          currentPhase: "Waiting to start",
+          passedCount: 0,
+          requestedCount,
+          errorMessage: null,
+          completedAt: null
+        });
+
+        while (!cancelled) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          const statusResponse = await fetch(
+            `/api/questions/generate/status?jobId=${encodeURIComponent(body.jobId)}`
+          );
+          const progress = (await statusResponse.json().catch(() => null)) as GenerationJobProgress | null;
+
+          if (!statusResponse.ok || !progress?.status) {
+            setStatus("Still waiting for your questions...");
+            continue;
+          }
+
+          setAutoGenerationProgress(progress);
+          setStatus(progress.currentPhase ?? "Generating your questions...");
+
+          if (progress.status === "FAILED") {
+            setAutoGenerationStatus("error");
+            setStatus(progress.errorMessage ?? "We couldn't generate questions from this upload yet.");
+            return;
+          }
+
+          if (progress.status === "COMPLETED") {
+            break;
+          }
+        }
+
+        if (cancelled) {
           return;
         }
 
@@ -343,15 +417,8 @@ export function PracticeClient() {
 
     void generateUploadedDocumentQuestions();
 
-    const poll = window.setInterval(() => {
-      if (!cancelled) {
-        setStatus("Generating your questions... this usually takes 2-5 minutes");
-      }
-    }, 10_000);
-
     return () => {
       cancelled = true;
-      window.clearInterval(poll);
     };
   }, [loadQuestion, router, searchParams]);
 
@@ -678,11 +745,50 @@ export function PracticeClient() {
           </div>
 
           {autoGenerationStatus === "generating" ? (
-            <div className="flex items-center gap-3 rounded-md border border-ink/10 bg-ink/[0.02] p-3">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink/20 border-t-accent" />
-              <p className="text-sm text-ink/70">
-                Generating your questions... this usually takes 2-5 minutes
-              </p>
+            <div className="space-y-3 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
+              <div className="flex items-center gap-3">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink/20 border-t-accent" />
+                <p className="text-sm text-ink/70">Generating your questions...</p>
+              </div>
+              {autoGenerationProgress ? (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-3 text-xs text-ink/60">
+                    <span>
+                      {autoGenerationProgress.passedCount} of {autoGenerationProgress.requestedCount} saved
+                    </span>
+                    <span>
+                      About{" "}
+                      {Math.ceil(
+                        (Math.max(
+                          0,
+                          autoGenerationProgress.requestedCount - autoGenerationProgress.passedCount
+                        ) *
+                          12) /
+                          60
+                      )}{" "}
+                      min remaining
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-ink/10">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all"
+                      style={{
+                        width: `${Math.round(
+                          (Math.min(
+                            autoGenerationProgress.passedCount,
+                            autoGenerationProgress.requestedCount
+                          ) /
+                            Math.max(1, autoGenerationProgress.requestedCount)) *
+                            100
+                        )}%`
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-ink/60">
+                    {autoGenerationProgress.currentPhase ?? "Preparing generation"}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <Button onClick={startSession} className="shadow-sm">
@@ -723,7 +829,7 @@ export function PracticeClient() {
                         disabled={feedback !== null}
                         onChange={() => setAnswer(option)}
                       />
-                      {option}
+                      {sanitizeFeedbackText(option)}
                     </label>
                   ))}
                 </div>
@@ -751,13 +857,17 @@ export function PracticeClient() {
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
                         {isShortAnswer ? "Model answer" : "Correct answer"}
                       </p>
-                      <p className="text-base leading-7 text-ink">{feedback.correctAnswer}</p>
+                      <p className="text-base leading-7 text-ink">
+                        {sanitizeFeedbackText(feedback.correctAnswer)}
+                      </p>
                     </div>
                     <div className="space-y-1.5">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
                         Explanation
                       </p>
-                      <p className="text-base leading-7 text-ink/80">{feedback.rationale}</p>
+                      <p className="text-base leading-7 text-ink/80">
+                        {sanitizeFeedbackText(feedback.rationale)}
+                      </p>
                     </div>
                   </div>
                   {isShortAnswer ? (
@@ -771,7 +881,7 @@ export function PracticeClient() {
                       feedback.citations.map((citation, index) => (
                         <div key={`${citation.label}-${index}`} className="space-y-1 rounded-xl border border-ink/10 bg-ink/[0.02] p-3">
                           <p className="text-xs font-medium text-ink/50">{citation.label}</p>
-                          <p className="text-xs text-ink/60">{citation.excerpt}</p>
+                          <p className="text-xs text-ink/60">{sanitizeFeedbackText(citation.excerpt)}</p>
                         </div>
                       ))
                     ) : (

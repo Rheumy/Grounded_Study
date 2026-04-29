@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,31 +10,16 @@ import {
 } from "@/lib/constants/question-types";
 
 type Doc = { id: string; title: string };
-type GenerationResult = { questionId?: string; status: string; reason?: string };
-type GenerationSummary = {
-  requestedCount: number;
+type GenerationJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+type GenerationJobProgress = {
+  jobId: string;
+  status: GenerationJobStatus;
+  currentPhase: string | null;
   passedCount: number;
-  failedCount: number;
-  primaryFailureReason?: string | null;
+  requestedCount: number;
+  errorMessage: string | null;
+  completedAt: string | null;
 };
-
-function describeGenerationFailure(reason?: string | null): string {
-  const normalized = reason?.trim().toLowerCase() ?? "";
-
-  if (
-    /background knowledge|field[- ]general|general knowledge|headline|summary|without reading|specific material|specific source|cited source|too basic|too general|widely known/.test(
-      normalized
-    )
-  ) {
-    return "No question was saved because the generated item was too general and could be answered without needing the source.";
-  }
-
-  if (/invalid response|non-json|validation|schema/.test(normalized)) {
-    return "No question was saved because a clean grounded question could not be formed from the selected material.";
-  }
-
-  return "No question was saved because the generated item could not be supported cleanly enough from the selected source.";
-}
 
 const difficultyOptions = [
   { value: 1, label: "Easy" },
@@ -54,15 +39,16 @@ export function GenerateForm({
   const router = useRouter();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<GenerationSummary | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [jobProgress, setJobProgress] = useState<GenerationJobProgress | null>(null);
+  const [lastCompletedJob, setLastCompletedJob] = useState<GenerationJobProgress | null>(null);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
   const [count, setCount] = useState(5);
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<VisibleQuestionType[]>([
     "MCQ"
   ]);
+  const completedNavigationRef = useRef<string | null>(null);
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -96,17 +82,101 @@ export function GenerateForm({
     return mix;
   };
 
+  const pollJob = useCallback(async (jobId: string) => {
+    const response = await fetch(`/api/questions/generate/status?jobId=${encodeURIComponent(jobId)}`);
+    const body = await response.json().catch(() => ({} as Partial<GenerationJobProgress>));
+
+    if (!response.ok || !body.status) {
+      throw new Error("Unable to check generation status.");
+    }
+
+    const nextProgress = body as GenerationJobProgress;
+    setJobProgress(nextProgress);
+    setLoading(nextProgress.status === "PENDING" || nextProgress.status === "PROCESSING");
+
+    if (nextProgress.status === "FAILED") {
+      setError(nextProgress.errorMessage ?? "Generation failed. Please try again.");
+      setStatus(null);
+      return;
+    }
+
+    if (nextProgress.status === "COMPLETED") {
+      setLastCompletedJob(nextProgress);
+      setStatus("Your last generation completed.");
+      if (completedNavigationRef.current !== nextProgress.jobId) {
+        completedNavigationRef.current = nextProgress.jobId;
+        router.push("/dashboard/practice");
+      }
+    }
+  }, [router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadActiveJob() {
+      const response = await fetch("/api/questions/generate/status");
+      const body = await response.json().catch(() => null);
+
+      if (cancelled || !response.ok || !body?.status) {
+        return;
+      }
+
+      const progress = body as GenerationJobProgress;
+      if (progress.status === "PENDING" || progress.status === "PROCESSING") {
+        setJobProgress(progress);
+        setLoading(true);
+        setStatus("Resuming your in-progress generation.");
+      } else if (progress.status === "COMPLETED") {
+        setLastCompletedJob(progress);
+        setStatus("Your last generation completed.");
+      }
+    }
+
+    void loadActiveJob();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!jobProgress?.jobId || (jobProgress.status !== "PENDING" && jobProgress.status !== "PROCESSING")) {
+      return;
+    }
+
+    let cancelled = false;
+    const runPoll = async () => {
+      try {
+        await pollJob(jobProgress.jobId);
+      } catch {
+        if (!cancelled) {
+          setStatus("Still waiting for an update...");
+        }
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void runPoll();
+    }, 2000);
+    void runPoll();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [jobProgress?.jobId, jobProgress?.status, pollJob]);
+
   const submit = async () => {
     setError(null);
-    setSummary(null);
     setStatus(null);
-    setWarning(null);
+    setLastCompletedJob(null);
     if (selectedQuestionTypes.length === 0) {
       setError("Choose at least one question type.");
       return;
     }
     setLoading(true);
-    setStatus("Your questions are being built from your study material.");
+    setJobProgress(null);
+    setStatus("Starting generation...");
     try {
       const response = await fetch("/api/questions/generate", {
         method: "POST",
@@ -125,37 +195,48 @@ export function GenerateForm({
         const body = await response.json().catch(() => ({}));
         setError(body.error ?? "Generation failed");
         setStatus(null);
+        setLoading(false);
         return;
       }
 
-      const body = await response.json().catch(() => ({} as {
-        results?: GenerationResult[];
-        summary?: GenerationSummary;
-        warning?: string;
-      }));
-      const results = Array.isArray(body.results) ? (body.results as GenerationResult[]) : [];
-      const passedCount = body.summary?.passedCount ?? results.filter((r) => r.status === "PASSED").length;
-      const failedCount = body.summary?.failedCount ?? Math.max(0, results.length - passedCount);
-      const primaryFailureReason =
-        results.find((result) => result.status !== "PASSED")?.reason ?? null;
+      const body = await response.json().catch(() => ({} as { jobId?: string }));
+      if (!body.jobId) {
+        setError("Generation started, but the job could not be tracked.");
+        setLoading(false);
+        return;
+      }
 
-      setSummary({
-        requestedCount: body.summary?.requestedCount ?? count,
-        passedCount,
-        failedCount,
-        primaryFailureReason
+      setJobProgress({
+        jobId: body.jobId,
+        status: "PENDING",
+        currentPhase: "Waiting to start",
+        passedCount: 0,
+        requestedCount: count,
+        errorMessage: null,
+        completedAt: null
       });
-      setWarning(typeof body.warning === "string" ? body.warning : null);
       setStatus(null);
     } catch {
       setError("Generation failed. Please try again.");
       setStatus(null);
-    } finally {
       setLoading(false);
     }
   };
 
   const isDisabled = selectedDocs.length === 0 || selectedQuestionTypes.length === 0 || loading;
+  const activeProgress =
+    jobProgress && (jobProgress.status === "PENDING" || jobProgress.status === "PROCESSING")
+      ? jobProgress
+      : null;
+  const progressTotal = Math.max(1, activeProgress?.requestedCount ?? count);
+  const progressPassed = Math.min(activeProgress?.passedCount ?? 0, progressTotal);
+  const progressPercent = Math.round((progressPassed / progressTotal) * 100);
+  const remainingQuestions = Math.max(0, progressTotal - progressPassed);
+  const estimatedSeconds = remainingQuestions * 12;
+  const estimatedTime =
+    estimatedSeconds >= 60
+      ? `${Math.ceil(estimatedSeconds / 60)} min`
+      : `${estimatedSeconds} sec`;
 
   return (
     <div className="space-y-4">
@@ -250,7 +331,7 @@ export function GenerateForm({
         disabled={isDisabled}
         className={isDisabled ? "" : "shadow-sm ring-1 ring-accent/20"}
       >
-        {loading ? "Generating questions..." : "Generate questions"}
+        {loading ? "Generating..." : "Generate questions"}
       </Button>
       {selectedDocs.length === 0 && !loading ? (
         <p className="text-xs text-ink/60">
@@ -261,63 +342,65 @@ export function GenerateForm({
           Select at least one question type before generating.
         </p>
       ) : null}
-      {loading ? (
-        <div className="space-y-1 rounded-md border border-ink/10 bg-ink/[0.02] p-3">
+      {activeProgress ? (
+        <div className="space-y-3 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-3 text-sm text-ink/70">
+              <span>
+                {progressPassed} of {progressTotal} saved
+              </span>
+              <span>About {estimatedTime} remaining</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-ink/10">
+              <div
+                className="h-full rounded-full bg-accent transition-all"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
           <p className="text-sm text-ink/70">
-            This can take a minute or two for higher-quality grounded questions.
+            {activeProgress.currentPhase ?? "Preparing generation"}
           </p>
           <p className="text-xs text-ink/55">
-            We build each question from your study material, then check it before it reaches your question bank.
+            You can leave this page and come back; the job will keep its place.
           </p>
         </div>
       ) : null}
       {status ? <p className="text-xs text-ink/60">{status}</p> : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
-      {summary ? (
+      {lastCompletedJob && !activeProgress ? (
         <div className="space-y-3 rounded-lg border border-accent/20 bg-accent/[0.05] p-4">
           <div className="space-y-1">
-            {summary.passedCount > 0 ? (
+            {lastCompletedJob.passedCount > 0 ? (
               <p className="text-sm font-semibold text-ink">Your question bank has been updated.</p>
             ) : (
               <p className="text-sm font-semibold text-ink">No new questions were added.</p>
             )}
-            {summary.failedCount > 0 ? (
-              <p className="text-sm text-ink/70">
-                {summary.passedCount === 0
-                  ? describeGenerationFailure(summary.primaryFailureReason)
-                  : "Some questions could not be generated because a clean grounded item could not be formed from the selected source. You can try again."}
-              </p>
-            ) : (
-              <p className="text-sm text-ink/70">
-                {summary.passedCount} {summary.passedCount === 1 ? "question is" : "questions are"} ready.
-              </p>
-            )}
+            <p className="text-sm text-ink/70">
+              {lastCompletedJob.passedCount}{" "}
+              {lastCompletedJob.passedCount === 1 ? "question is" : "questions are"} ready.
+            </p>
           </div>
-          {warning ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-              <p className="text-sm text-ink/75">{warning}</p>
-            </div>
-          ) : null}
 
           <div className="flex flex-wrap gap-2">
-            {summary.passedCount > 0 ? (
+            {lastCompletedJob.passedCount > 0 ? (
               <Button type="button" onClick={() => router.push("/dashboard/practice")}>
                 Practise these questions
               </Button>
             ) : null}
-            {summary.passedCount > 0 ? (
+            {lastCompletedJob.passedCount > 0 ? (
               <Button type="button" variant="outline" onClick={() => router.push("/dashboard/exam")}>
                 Start a mock exam
               </Button>
             ) : null}
             <Button
               type="button"
-              variant={summary.passedCount > 0 ? "outline" : "default"}
+              variant={lastCompletedJob.passedCount > 0 ? "outline" : "default"}
               onClick={() => {
-                setSummary(null);
+                setLastCompletedJob(null);
+                setJobProgress(null);
                 setError(null);
                 setStatus(null);
-                setWarning(null);
               }}
             >
               Generate more questions

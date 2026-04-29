@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { getShortAnswerReviewLabel, type ShortAnswerReviewStatus } from "@/lib/feedback/user-facing";
+import {
+  getShortAnswerReviewLabel,
+  sanitizeFeedbackText,
+  type ShortAnswerReviewStatus
+} from "@/lib/feedback/user-facing";
 import { loadHiddenQuestionIds } from "@/lib/question-hiding/browser";
 
 type Question = {
@@ -45,6 +49,8 @@ type ExamReview = {
   review: ExamReviewItem[];
 };
 
+type ExamQuestionMix = "MCQ" | "TRUE_FALSE" | "MIXED";
+
 const difficultyOptions = [
   {
     label: "Easy",
@@ -63,10 +69,17 @@ const difficultyOptions = [
   }
 ] as const;
 
+const questionMixOptions: { value: ExamQuestionMix; label: string }[] = [
+  { value: "MCQ", label: "Multiple choice only" },
+  { value: "TRUE_FALSE", label: "True/false only" },
+  { value: "MIXED", label: "Mixed (50/50 split)" }
+];
+
 export function ExamClient() {
   const [count, setCount] = useState(10);
   const [timeLimitMin, setTimeLimitMin] = useState(30);
   const [difficulty, setDifficulty] = useState<number>(3);
+  const [questionMix, setQuestionMix] = useState<ExamQuestionMix>("MCQ");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -124,6 +137,7 @@ export function ExamClient() {
         count,
         timeLimitMin,
         difficulty,
+        questionMix,
         hiddenQuestionIds: loadHiddenQuestionIds()
       })
     });
@@ -199,7 +213,7 @@ export function ExamClient() {
               <div key={item.questionId} className="space-y-3 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
                 <div className="space-y-1">
                   <p className="text-sm text-ink/50">Question {item.order}</p>
-                  <p className="font-medium text-ink">{item.stem}</p>
+                  <p className="font-medium text-ink">{sanitizeFeedbackText(item.stem)}</p>
                 </div>
 
                 <p className={`inline-flex rounded-full bg-ink/[0.03] px-3 py-1 text-sm font-medium ${statusClass}`}>
@@ -213,9 +227,9 @@ export function ExamClient() {
                   <span className="font-medium text-ink">
                     {isShortAnswer ? "Model answer:" : "Correct answer:"}
                   </span>{" "}
-                  {item.correctAnswer}
+                  {sanitizeFeedbackText(item.correctAnswer)}
                 </p>
-                <p className="text-sm text-ink/70">{item.rationale}</p>
+                <p className="text-sm text-ink/70">{sanitizeFeedbackText(item.rationale)}</p>
                 {isShortAnswer ? (
                   <p className="text-sm text-ink/60">
                     This is a model-answer review rather than an objective score.
@@ -231,7 +245,7 @@ export function ExamClient() {
                         className="space-y-1 rounded-xl border border-ink/10 bg-ink/[0.02] p-3"
                       >
                         <p className="text-xs font-medium text-ink/50">{citation.label}</p>
-                        <p className="text-xs text-ink/60">{citation.excerpt}</p>
+                        <p className="text-xs text-ink/60">{sanitizeFeedbackText(citation.excerpt)}</p>
                       </div>
                     ))
                   ) : (
@@ -267,6 +281,26 @@ export function ExamClient() {
                 className="h-9 w-24 rounded-md border border-ink/15 px-2"
               />
             </label>
+            <div className="space-y-3 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4 md:col-span-2">
+              <div className="space-y-1">
+                <p className="font-medium text-ink">Question type</p>
+                <p className="text-xs text-ink/55">Choose the type mix for this mock exam.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {questionMixOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant={questionMix === option.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setQuestionMix(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-3 rounded-2xl border border-ink/10 bg-ink/[0.02] p-4 md:col-span-2">
               <div className="space-y-1">
                 <p className="font-medium text-ink">Difficulty</p>
@@ -314,7 +348,7 @@ export function ExamClient() {
           {questions.map((question, index) => (
             <div key={question.id} className="space-y-2 rounded-2xl border border-ink/10 bg-white p-4 shadow-[0_18px_35px_-34px_rgba(15,23,42,0.45)]">
               <p className="text-sm font-medium text-ink">
-                {index + 1}. {question.stem}
+                {index + 1}. {sanitizeFeedbackText(question.stem)}
               </p>
               {question.type === "MCQ" || question.type === "TRUE_FALSE" ? (
                 <div className="space-y-2">
@@ -326,7 +360,7 @@ export function ExamClient() {
                         checked={answers[question.id] === option}
                         onChange={() => setAnswers((prev) => ({ ...prev, [question.id]: option }))}
                       />
-                      {option}
+                      {sanitizeFeedbackText(option)}
                     </label>
                   ))}
                 </div>

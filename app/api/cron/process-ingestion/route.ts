@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/observability/logger";
-import { processIngestionJobsBatch } from "@/lib/jobs/run-batch";
+import { processGenerationJobsBatch, processIngestionJobsBatch } from "@/lib/jobs/run-batch";
 
 function getBatchLimit() {
   const configured = Number(process.env.CRON_INGESTION_BATCH_SIZE ?? 3);
@@ -31,12 +31,16 @@ export async function GET(request: Request) {
     limit: batchLimit,
     source: "cron"
   });
+  const generationBatch = await processGenerationJobsBatch({
+    limit: Math.max(1, Math.min(batchLimit, 3)),
+    source: "cron"
+  });
 
   return NextResponse.json({
     ok: true,
-    claimed: batch.claimed,
-    completed: batch.completed,
-    failed: batch.failed,
-    results: batch.results
+    claimed: batch.claimed + generationBatch.claimed,
+    completed: batch.completed + generationBatch.completed,
+    failed: batch.failed + generationBatch.failed,
+    results: [...batch.results, ...generationBatch.results]
   });
 }

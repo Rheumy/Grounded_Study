@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import type { IngestionJob } from "@prisma/client";
+import type { GenerationJob, IngestionJob } from "@prisma/client";
 import { logger } from "@/lib/observability/logger";
 
 const LOCK_TIMEOUT_MS = 1000 * 60 * 10;
@@ -59,4 +59,42 @@ export async function markJobFailed(jobId: string, error: string) {
   });
   logger.error({ jobId, documentId: job.documentId, error }, "Ingestion job marked failed");
   return job;
+}
+
+export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const jobs = await tx.$queryRaw<GenerationJob[]>`
+      SELECT * FROM "GenerationJob"
+      WHERE "status" = 'PENDING'
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    `;
+
+    if (!jobs.length) return null;
+
+    const job = jobs[0];
+    await tx.generationJob.update({
+      where: { id: job.id },
+      data: {
+        status: "PROCESSING",
+        startedAt: job.startedAt ?? now,
+        currentPhase: "Starting generation",
+        errorMessage: null
+      }
+    });
+
+    logger.info(
+      {
+        jobId: job.id,
+        userId: job.userId,
+        requestedCount: job.requestedCount
+      },
+      "Generation job claimed"
+    );
+
+    return job;
+  });
 }

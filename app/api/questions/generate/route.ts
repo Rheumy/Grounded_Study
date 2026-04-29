@@ -2,54 +2,13 @@ import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { resolveUserGenerationCaps } from "@/lib/billing/generation-limits";
 import { prisma } from "@/lib/db/prisma";
-import { generateQuestions, type TypeMix } from "@/lib/llm/generate";
+import { type TypeMix } from "@/lib/llm/generate";
 import { resolvePreset } from "@/lib/llm/presets";
-import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
+import { enforceQuestionLimit } from "@/lib/billing/usage";
+import { processGenerationJobsBatch } from "@/lib/jobs/run-batch";
 import { logger } from "@/lib/observability/logger";
 
-const HEAVY_DOCUMENT_USAGE_WARNING_THRESHOLD = 25;
-const HEAVY_DOCUMENT_USAGE_WARNING =
-  "You've generated many questions from this material. Consider uploading more sources for greater variety.";
-
-async function getHeavyDocumentUsageWarning(params: { userId: string; documentIds: string[] }) {
-  if (params.documentIds.length === 0) {
-    return null;
-  }
-
-  try {
-    const usageByQuestion = await prisma.chunkUsage.groupBy({
-      by: ["documentId", "questionId"],
-      where: {
-        userId: params.userId,
-        documentId: { in: params.documentIds }
-      }
-    });
-    const questionCountByDocumentId = usageByQuestion.reduce((counts, row) => {
-      counts.set(row.documentId, (counts.get(row.documentId) ?? 0) + 1);
-      return counts;
-    }, new Map<string, number>());
-
-    return [...questionCountByDocumentId.values()].some(
-      (questionCount) => questionCount > HEAVY_DOCUMENT_USAGE_WARNING_THRESHOLD
-    )
-      ? HEAVY_DOCUMENT_USAGE_WARNING
-      : null;
-  } catch (error) {
-    logger.warn(
-      {
-        userId: params.userId,
-        documentIds: params.documentIds,
-        error: error instanceof Error ? error.message : String(error)
-      },
-      "Failed to compute heavy document usage warning"
-    );
-
-    return null;
-  }
-}
-
 export async function POST(request: Request) {
-  const requestStartedAt = Date.now();
   const user = await requireUserApi();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -177,49 +136,47 @@ export async function POST(request: Request) {
       "Generate questions request accepted"
     );
 
-    const results = await generateQuestions({
-      ownerId: user.id,
-      documentIds: documents.map((doc) => doc.id),
-      styleProfileId,
-      presetStyleProfile: resolvedPreset,
-      difficulty,
-      count,
-      typeMix
+    const job = await prisma.generationJob.create({
+      data: {
+        userId: user.id,
+        documentIds: documents.map((doc) => doc.id),
+        styleProfileId,
+        presetKey: resolvedPreset?.key ?? null,
+        difficulty,
+        requestedCount: count,
+        typeMix: typeMix ?? { MCQ: count, SHORT_ANSWER: 0, TRUE_FALSE: 0 },
+        status: "PENDING",
+        passedCount: 0,
+        currentPhase: "Waiting to start"
+      }
     });
 
-    const passed = results.filter((result) => result.status === "PASSED").length;
-    const insufficientEvidence = results.filter(
-      (result) => result.status === "INSUFFICIENT_EVIDENCE"
-    ).length;
-    const warning = await getHeavyDocumentUsageWarning({
-      userId: user.id,
-      documentIds: documents.map((doc) => doc.id)
-    });
-    await incrementUsage({ userId: user.id, questions: passed });
     logger.info(
       {
         userId: user.id,
+        jobId: job.id,
         readyDocumentCount: documents.length,
         styleProfileId,
         presetKey: resolvedPreset?.key ?? null,
         difficulty,
         requestedCount: count,
-        passedCount: passed,
-        insufficientEvidenceCount: insufficientEvidence,
-        typeMix,
-        requestDurationMs: Date.now() - requestStartedAt
+        typeMix
       },
-      "Generate questions request completed"
+      "Generate questions job queued"
     );
-    return NextResponse.json({
-      results,
-      summary: {
-        requestedCount: count,
-        passedCount: passed,
-        failedCount: results.length - passed
-      },
-      ...(warning ? { warning } : {})
+
+    void processGenerationJobsBatch({ limit: 1, source: "request" }).catch((error) => {
+      logger.error(
+        {
+          userId: user.id,
+          jobId: job.id,
+          message: error instanceof Error ? error.message : String(error)
+        },
+        "Inline generation job kick failed"
+      );
     });
+
+    return NextResponse.json({ jobId: job.id }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Generation failed";
     logger.error(
@@ -231,10 +188,9 @@ export async function POST(request: Request) {
         difficulty,
         requestedCount: count,
         typeMix,
-        message,
-        requestDurationMs: Date.now() - requestStartedAt
+        message
       },
-      "Generation failed"
+      "Generation job queueing failed"
     );
     return NextResponse.json({ error: message }, { status: 400 });
   }

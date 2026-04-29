@@ -43,6 +43,13 @@ enum JobStatus {
   FAILED
 }
 
+enum GenerationJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum QuestionType {
   MCQ
   SHORT_ANSWER
@@ -94,6 +101,7 @@ model User {
   aiUsageEvents  AiUsageEvent[]
   questionFeedbacks QuestionFeedback[]
   questionExposures QuestionExposure[]
+  generationJobs GenerationJob[]
 }
 
 model Account {
@@ -199,6 +207,30 @@ model IngestionJob {
 
   @@index([status])
   @@index([lockedAt])
+}
+
+model GenerationJob {
+  id             String              @id @default(cuid())
+  userId         String
+  documentIds    Json
+  typeMix        Json
+  styleProfileId String?
+  presetKey      String?
+  difficulty     Int
+  requestedCount Int
+  status         GenerationJobStatus @default(PENDING)
+  passedCount    Int                 @default(0)
+  currentPhase   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorMessage   String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([createdAt])
 }
 
 model StyleProfile {

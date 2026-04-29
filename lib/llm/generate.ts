@@ -33,6 +33,15 @@ export type TypeMix = {
   TRUE_FALSE?: number;
 };
 
+export type GenerationProgressEvent =
+  | { phase: "retrieving"; questionNumber: number; totalQuestions: number }
+  | { phase: "generating"; questionNumber: number; totalQuestions: number }
+  | { phase: "verifying"; questionNumber: number; totalQuestions: number }
+  | { phase: "saving"; questionNumber: number; totalQuestions: number }
+  | { phase: "saved"; questionNumber: number; totalQuestions: number; passedCount: number };
+
+export type GenerationProgressHandler = (event: GenerationProgressEvent) => void | Promise<void>;
+
 function countMatches(value: string, pattern: RegExp): number {
   const matches = value.match(pattern);
   return matches ? matches.length : 0;
@@ -430,6 +439,7 @@ export async function generateQuestions(params: {
   difficulty: number;
   count: number;
   typeMix?: TypeMix | null;
+  onProgress?: GenerationProgressHandler;
 }) {
   logger.info(
     {
@@ -493,6 +503,11 @@ export async function generateQuestions(params: {
     for (let attempt = 0; attempt < maxAttempts && !saved; attempt += 1) {
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
         const retrievalStartedAt = Date.now();
+        await params.onProgress?.({
+          phase: "retrieving",
+          questionNumber: i + 1,
+          totalQuestions: params.count
+        });
         const focusedRetryQuery =
           retryStrategy === "narrow_source_specific"
             ? buildNarrowRetryQuery(narrowRetrySourceChunks)
@@ -573,6 +588,11 @@ export async function generateQuestions(params: {
       let generated;
       try {
         const generationStartedAt = Date.now();
+        await params.onProgress?.({
+          phase: "generating",
+          questionNumber: i + 1,
+          totalQuestions: params.count
+        });
         logger.info(
           {
             ownerId: params.ownerId,
@@ -668,6 +688,11 @@ export async function generateQuestions(params: {
       let verifier;
       try {
         const verifierStartedAt = Date.now();
+        await params.onProgress?.({
+          phase: "verifying",
+          questionNumber: i + 1,
+          totalQuestions: params.count
+        });
         logger.info(
           {
             ownerId: params.ownerId,
@@ -786,6 +811,11 @@ export async function generateQuestions(params: {
       }
 
       const saveStartedAt = Date.now();
+      await params.onProgress?.({
+        phase: "saving",
+        questionNumber: i + 1,
+        totalQuestions: params.count
+      });
       logger.info(
         {
           ownerId: params.ownerId,
@@ -850,6 +880,12 @@ export async function generateQuestions(params: {
       }
 
       results.push({ questionId: record.id, status: "PASSED" });
+      await params.onProgress?.({
+        phase: "saved",
+        questionNumber: i + 1,
+        totalQuestions: params.count,
+        passedCount: results.filter((result) => result.status === "PASSED").length
+      });
       saved = true;
     }
 

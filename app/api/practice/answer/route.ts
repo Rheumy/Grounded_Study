@@ -7,7 +7,8 @@ import {
   buildUserFacingRationale,
   formatFeedbackCitations,
   getShortAnswerReviewStatus,
-  normalizeCitationRecords
+  normalizeCitationRecords,
+  sanitizeFeedbackText
 } from "@/lib/feedback/user-facing";
 
 export async function POST(request: Request) {
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
     correct,
     needsReview,
     reviewStatus,
-    correctAnswer: question.answer,
+    correctAnswer: sanitizeFeedbackText(question.answer),
     rationale: buildUserFacingRationale({
       questionType: question.type,
       storedRationale: question.rationale,

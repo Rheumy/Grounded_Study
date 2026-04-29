@@ -13,6 +13,7 @@ import {
   buildUnseenQuestionFilter,
   markQuestionsServed
 } from "@/lib/questions/exposure";
+import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
 
@@ -117,9 +118,11 @@ function toPracticeQuestionDto(question: {
 
   return {
     id: question.id,
-    stem: question.stem,
+    stem: sanitizeFeedbackText(question.stem),
     type: question.type,
-    optionsJson: Array.isArray(question.optionsJson) ? (question.optionsJson as string[]) : null,
+    optionsJson: Array.isArray(question.optionsJson)
+      ? (question.optionsJson as string[]).map((option) => sanitizeFeedbackText(option))
+      : null,
     difficulty: question.difficulty,
     tagsJson: question.tagsJson ?? null,
     userFeedback: latestFeedback
