@@ -22,7 +22,8 @@ export const authOptions: NextAuthOptions = {
   // @ts-expect-error - NextAuth and PrismaAdapter types often mismatch slightly
   adapter: PrismaAdapter(prisma),
   // NextAuth forces "jwt" strategy when using a Credentials Provider
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 7_776_000 },
+  jwt: { maxAge: 7_776_000 },
   pages: {
     signIn: "/auth/signin",
     verifyRequest: "/auth/verify-request",

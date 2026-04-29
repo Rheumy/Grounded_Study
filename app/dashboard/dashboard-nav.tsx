@@ -25,7 +25,13 @@ export function DashboardNav({
 }) {
   const pathname = usePathname();
 
-  const links = showAdmin ? [...items, { href: "/dashboard/admin", label: "Admin" }] : items;
+  const visibleItems = items.filter(
+    (item) =>
+      item.href !== "/dashboard/style-profiles" &&
+      item.label !== "Question Style" &&
+      item.label !== "Style Profiles"
+  );
+  const links = showAdmin ? [...visibleItems, { href: "/dashboard/admin", label: "Admin" }] : visibleItems;
 
   return (
     <nav className="flex flex-col gap-1.5 text-sm">

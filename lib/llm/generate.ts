@@ -375,12 +375,12 @@ function buildTypeSlots(
   if (typeMix) {
     // User-provided explicit override
     mcqCount = typeMix.MCQ ?? 0;
-    shortAnswerCount = typeMix.SHORT_ANSWER ?? 0;
+    shortAnswerCount = 0;
     trueFalseCount = typeMix.TRUE_FALSE ?? 0;
   } else if (profileDistribution) {
     // Infer from profile weights via proportional rounding
     const mcqW = profileDistribution.MCQ ?? 0;
-    const saW = profileDistribution.SHORT_ANSWER ?? 0;
+    const saW = 0;
     const tfW = profileDistribution.TRUE_FALSE ?? 0;
     const totalWeight = mcqW + saW + tfW;
 

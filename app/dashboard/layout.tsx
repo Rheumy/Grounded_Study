@@ -9,12 +9,12 @@ import { LEGAL_CONSENT_COOKIE_NAME, LEGAL_VERSION } from "@/lib/constants/legal"
 const navItems = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/documents", label: "Study Materials" },
-  { href: "/dashboard/style-profiles", label: "Question Style" },
   { href: "/dashboard/generate", label: "Create Questions" },
   { href: "/dashboard/practice", label: "Practice" },
   { href: "/dashboard/exam", label: "Mock Exam" },
   { href: "/dashboard/analytics", label: "Progress" },
-  { href: "/dashboard/billing", label: "Billing" }
+  { href: "/dashboard/billing", label: "Billing" },
+  { href: "/dashboard/account", label: "Account" }
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {

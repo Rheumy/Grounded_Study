@@ -12,22 +12,15 @@ const dashboardCards = [
     cta: "Upload study material"
   },
   {
-    href: "/dashboard/style-profiles",
-    eyebrow: "Step 2",
-    title: "Question style",
-    description: "Tell us what kind of questions you want, or add examples from your exam.",
-    cta: "Set question style"
-  },
-  {
     href: "/dashboard/generate",
-    eyebrow: "Step 3",
+    eyebrow: "Step 2",
     title: "Generate questions",
     description: "Create your question bank from your uploaded study material.",
     cta: "Generate your question bank"
   },
   {
     href: "/dashboard/practice",
-    eyebrow: "Step 4",
+    eyebrow: "Step 3",
     title: "Practice",
     description: "Practise your generated questions.",
     cta: "Practise these questions"
@@ -69,10 +62,10 @@ export default async function DashboardPage() {
             First time here? Upload your study material
           </Link>
           <Link
-            href="/dashboard/style-profiles"
+            href="/dashboard/generate"
             className="inline-flex h-10 items-center justify-center rounded-md border border-ink/20 px-4 text-sm font-medium text-ink transition hover:bg-ink/5"
           >
-            Or start with your question style
+            Create questions from ready materials
           </Link>
         </div>
         <p className="mt-5 text-sm text-ink/50">Signed in as {session?.user?.email}</p>
@@ -85,11 +78,11 @@ export default async function DashboardPage() {
         </div>
         <div>
           <p className="font-medium text-ink">Step 2</p>
-          <p className="mt-1">Tell us what kind of questions you want</p>
+          <p className="mt-1">Generate your question bank</p>
         </div>
         <div>
           <p className="font-medium text-ink">Step 3</p>
-          <p className="mt-1">Generate your question bank</p>
+          <p className="mt-1">Practise with focused sessions</p>
         </div>
         <div>
           <p className="font-medium text-ink">Step 4</p>

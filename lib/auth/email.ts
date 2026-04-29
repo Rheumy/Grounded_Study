@@ -141,7 +141,7 @@ export async function issueMagicLink({
 
   const normalizedEmail = normalizeEmailIdentifier(email);
   if (!isBetaEmailAllowed(normalizedEmail)) {
-    logger.warn({ email: maskEmail(normalizedEmail) }, "Blocked magic link request outside beta allowlist");
+    logger.info({ email: maskEmail(normalizedEmail) }, "Blocked magic link request outside beta allowlist");
     throw new MagicLinkRequestError(
       403,
       "Beta access is currently limited to approved email addresses."

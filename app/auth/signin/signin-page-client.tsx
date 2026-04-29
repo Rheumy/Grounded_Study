@@ -32,6 +32,12 @@ function getAuthErrorMessage(error: string | null) {
   }
 }
 
+type MagicLinkResponse = {
+  status?: "sent" | "blocked_allowlist" | "error";
+  email?: string;
+  error?: string;
+};
+
 export function SignInPageClient() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -72,26 +78,27 @@ export function SignInPageClient() {
     persistConsent();
     persistPendingEmail();
 
-    const result = await signIn("email", {
-      email,
-      callbackUrl: "/dashboard",
-      redirect: false
-    });
+    try {
+      const response = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const body = (await response.json().catch(() => ({}))) as MagicLinkResponse;
 
-    setSendingLink(false);
+      if (body.status === "sent") {
+        window.location.href = "/auth/verify-request";
+        return;
+      }
 
-    if (result?.error) {
       setStatus(null);
-      setError(getAuthErrorMessage(result.error) ?? "We couldn't send the sign-in link. Please try again.");
-      return;
+      setError(body.error ?? "We couldn't send the sign-in link. Please try again.");
+    } catch {
+      setStatus(null);
+      setError("We couldn't send the sign-in link. Please try again.");
+    } finally {
+      setSendingLink(false);
     }
-
-    if (result?.url) {
-      window.location.href = result.url;
-      return;
-    }
-
-    setStatus("Check your email for the sign-in link.");
   };
 
   const startGoogleSignIn = async () => {
@@ -179,4 +186,3 @@ export function SignInPageClient() {
     </AuthCard>
   );
 }
-

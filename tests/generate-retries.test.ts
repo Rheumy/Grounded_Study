@@ -118,6 +118,7 @@ describe("generation retries", () => {
     expect((generateQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
       "generalist"
     );
+    expect((generateQuestion as any).mock.calls[0][0].questionType).toBe("MCQ");
     expect((verifyQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
       "generalist"
     );
@@ -176,6 +177,32 @@ describe("generation retries", () => {
     expect((verifyQuestion as any).mock.calls[0][0].styleProfile.assumedBackgroundLevel).toBe(
       "specialist"
     );
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("clamps legacy short-answer-only profile distributions to the MCQ fallback", async () => {
+    (prisma.styleProfile.findFirst as any).mockResolvedValue({
+      id: "profile-1",
+      name: "Legacy short-answer profile",
+      schemaJson: {
+        questionTypeDistribution: { MCQ: 0, SHORT_ANSWER: 1, TRUE_FALSE: 0 },
+        assumedBackgroundLevel: "generalist"
+      },
+      instructionsText: null
+    });
+    (retrieveChunks as any).mockResolvedValue([chunkA]);
+    (generateQuestion as any).mockResolvedValue(buildGeneratedQuestion("chunk-a"));
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: "profile-1",
+      difficulty: 3,
+      count: 1
+    });
+
+    expect((generateQuestion as any).mock.calls[0][0].questionType).toBe("MCQ");
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
 

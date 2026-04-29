@@ -113,8 +113,7 @@ export const PRESETS: Record<PresetKey, QuestionStylePreset> = {
 
 export const PRESET_DISPLAY_ORDER: PresetKey[] = [
   "standard_mcq",
-  "standard_true_false",
-  "standard_short_answer"
+  "standard_true_false"
 ];
 
 export const PRESETS_IN_DISPLAY_ORDER = PRESET_DISPLAY_ORDER.map((key) => PRESETS[key]);

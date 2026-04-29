@@ -3,10 +3,7 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { resolveUserGenerationCaps } from "@/lib/billing/generation-limits";
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestions, type TypeMix } from "@/lib/llm/generate";
-import {
-  DEFAULT_QUESTION_STYLE_PRESET_KEY,
-  resolvePreset
-} from "@/lib/llm/presets";
+import { resolvePreset } from "@/lib/llm/presets";
 import { enforceQuestionLimit, incrementUsage } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
@@ -74,11 +71,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const resolvedPreset = styleProfileId
-    ? null
-    : resolvePreset(presetKey ?? DEFAULT_QUESTION_STYLE_PRESET_KEY);
+  const resolvedPreset = styleProfileId || !presetKey ? null : resolvePreset(presetKey);
 
-  if (!styleProfileId && !resolvedPreset) {
+  if (presetKey && !resolvedPreset) {
     return NextResponse.json({ error: "Unknown question style preset" }, { status: 400 });
   }
 

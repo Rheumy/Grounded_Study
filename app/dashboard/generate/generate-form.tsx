@@ -1,23 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { QUESTION_TYPE_LABELS, VISIBLE_QUESTION_TYPES } from "@/lib/constants/question-types";
 import {
-  DEFAULT_QUESTION_STYLE_PRESET_KEY,
-  PRESETS_IN_DISPLAY_ORDER,
-  resolvePreset,
-  type PresetKey
-} from "@/lib/llm/presets";
+  QUESTION_TYPE_LABELS,
+  VISIBLE_QUESTION_TYPES,
+  type VisibleQuestionType
+} from "@/lib/constants/question-types";
 
 type Doc = { id: string; title: string };
-type Profile = {
-  id: string;
-  name: string;
-  distribution: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } | null;
-};
 type GenerationResult = { questionId?: string; status: string; reason?: string };
 type GenerationSummary = {
   requestedCount: number;
@@ -25,7 +17,6 @@ type GenerationSummary = {
   failedCount: number;
   primaryFailureReason?: string | null;
 };
-type StyleSelectionMode = "preset" | "custom";
 
 function describeGenerationFailure(reason?: string | null): string {
   const normalized = reason?.trim().toLowerCase() ?? "";
@@ -55,11 +46,9 @@ const difficultyOptions = [
 
 export function GenerateForm({
   documents,
-  profiles,
   maxRequestCount
 }: {
   documents: Doc[];
-  profiles: Profile[];
   maxRequestCount: number;
 }) {
   const router = useRouter();
@@ -71,23 +60,9 @@ export function GenerateForm({
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [difficulty, setDifficulty] = useState(3);
   const [count, setCount] = useState(5);
-  const [styleSelectionMode, setStyleSelectionMode] = useState<StyleSelectionMode>("preset");
-  const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey>(
-    DEFAULT_QUESTION_STYLE_PRESET_KEY
-  );
-  const [selectedStyleProfileId, setSelectedStyleProfileId] = useState<string>("");
-  const visibleProfiles = profiles.filter((profile) => {
-    if (!profile.distribution) {
-      return true;
-    }
-
-    return VISIBLE_QUESTION_TYPES.some((type) => (profile.distribution?.[type] ?? 0) > 0);
-  });
-  const visiblePresets = PRESETS_IN_DISPLAY_ORDER.filter((preset) =>
-    VISIBLE_QUESTION_TYPES.some(
-      (type) => (preset.styleProfile.questionTypeDistribution?.[type] ?? 0) > 0
-    )
-  );
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<VisibleQuestionType[]>([
+    "MCQ"
+  ]);
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -95,29 +70,39 @@ export function GenerateForm({
     );
   };
 
-  const selectedProfile =
-    visibleProfiles.find((profile) => profile.id === selectedStyleProfileId) ?? null;
-  const selectedPreset = (() => {
-    const resolved = resolvePreset(selectedPresetKey);
-    if (resolved && visiblePresets.some((preset) => preset.key === resolved.key)) {
-      return resolved;
+  const toggleQuestionType = (type: VisibleQuestionType) => {
+    setSelectedQuestionTypes((prev) =>
+      prev.includes(type) ? prev.filter((selected) => selected !== type) : [...prev, type]
+    );
+  };
+
+  const buildTypeMix = () => {
+    const selected = VISIBLE_QUESTION_TYPES.filter((type) =>
+      selectedQuestionTypes.includes(type)
+    );
+    const mix: Record<VisibleQuestionType, number> = { MCQ: 0, TRUE_FALSE: 0 };
+
+    if (selected.length === 0) {
+      return mix;
     }
 
-    return visiblePresets[0] ?? PRESETS_IN_DISPLAY_ORDER[0];
-  })();
-  const activeDistribution =
-    styleSelectionMode === "custom"
-      ? selectedProfile?.distribution ?? null
-      : selectedPreset.styleProfile.questionTypeDistribution;
-  const customStyleMissing = styleSelectionMode === "custom" && !selectedStyleProfileId;
+    const baseCount = Math.floor(count / selected.length);
+    let remainder = count % selected.length;
+    selected.forEach((type) => {
+      mix[type] = baseCount + (remainder > 0 ? 1 : 0);
+      remainder -= 1;
+    });
+
+    return mix;
+  };
 
   const submit = async () => {
     setError(null);
     setSummary(null);
     setStatus(null);
     setWarning(null);
-    if (styleSelectionMode === "custom" && !selectedStyleProfileId) {
-      setError("Choose a saved custom style or use one of the built-in styles.");
+    if (selectedQuestionTypes.length === 0) {
+      setError("Choose at least one question type.");
       return;
     }
     setLoading(true);
@@ -128,9 +113,9 @@ export function GenerateForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           documentIds: selectedDocs,
-          styleProfileId:
-            styleSelectionMode === "custom" ? selectedStyleProfileId || null : null,
-          presetKey: styleSelectionMode === "preset" ? selectedPreset.key : null,
+          styleProfileId: null,
+          presetKey: null,
+          typeMix: buildTypeMix(),
           difficulty,
           count
         })
@@ -170,101 +155,10 @@ export function GenerateForm({
     }
   };
 
-  const isDisabled = selectedDocs.length === 0 || loading || customStyleMissing;
+  const isDisabled = selectedDocs.length === 0 || selectedQuestionTypes.length === 0 || loading;
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-ink">Question style</p>
-        <p className="text-sm text-ink/60">
-          Start with a built-in style, or choose a saved custom style if you want a more exam-specific setup.
-        </p>
-        <p className="text-xs text-ink/55">
-          Beta supports multiple choice and true/false. More types coming.
-        </p>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {visiblePresets.map((preset) => {
-            const isSelected =
-              styleSelectionMode === "preset" && selectedPreset.key === preset.key;
-            return (
-              <button
-                key={preset.key}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => {
-                  setStyleSelectionMode("preset");
-                  setSelectedPresetKey(preset.key);
-                }}
-                className={`space-y-2 rounded-2xl border p-4 text-left transition ${
-                  isSelected
-                    ? "border-accent/30 bg-accentSoft/40 shadow-sm ring-1 ring-accent/20"
-                    : "border-ink/10 bg-white hover:bg-ink/[0.02]"
-                }`}
-              >
-                <p className="text-sm font-medium text-ink">
-                  {QUESTION_TYPE_LABELS[
-                    VISIBLE_QUESTION_TYPES.find(
-                      (type) => (preset.styleProfile.questionTypeDistribution?.[type] ?? 0) > 0
-                    ) ?? "MCQ"
-                  ]}
-                </p>
-                <p className="text-xs text-ink/60">{preset.description}</p>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            aria-pressed={styleSelectionMode === "custom"}
-            onClick={() => setStyleSelectionMode("custom")}
-            className={`space-y-2 rounded-2xl border p-4 text-left transition ${
-              styleSelectionMode === "custom"
-                ? "border-accent/30 bg-accentSoft/40 shadow-sm ring-1 ring-accent/20"
-                : "border-ink/10 bg-white hover:bg-ink/[0.02]"
-            }`}
-          >
-            <p className="text-sm font-medium text-ink">Use a custom style</p>
-            <p className="text-xs text-ink/60">
-              Select one of your saved question styles to match a specific exam, tone, or format.
-            </p>
-          </button>
-        </div>
-        {styleSelectionMode === "custom" ? (
-          <div className="space-y-2 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
-            <p className="text-xs text-ink/60">
-              Choose a saved Question Style created from your own examples. It shapes wording, level,
-              and the question mix for this run.
-            </p>
-            {visibleProfiles.length > 0 ? (
-              <select
-                className="h-10 w-full rounded-md border border-ink/15 bg-white px-3 text-sm"
-                value={selectedStyleProfileId}
-                onChange={(event) => setSelectedStyleProfileId(event.target.value)}
-              >
-                <option value="">Select a saved custom style</option>
-                {visibleProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-            ) : profiles.length > 0 ? (
-              <p className="text-sm text-ink/65">
-                Your saved Question Styles currently lean on hidden beta-only question types. Create a
-                new one for multiple choice or true/false if you want to use a custom style here.
-              </p>
-            ) : (
-              <p className="text-sm text-ink/65">
-                No saved Question Styles yet.{" "}
-                <Link href="/dashboard/style-profiles" className="font-medium text-accent hover:underline">
-                  Create one
-                </Link>{" "}
-                to guide tone, level, and exam style.
-              </p>
-            )}
-          </div>
-        ) : null}
-      </div>
-
       <div className="space-y-2">
         <p className="text-sm font-medium text-ink">Choose study materials</p>
         <p className="text-sm text-ink/60">
@@ -286,6 +180,28 @@ export function GenerateForm({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-ink">Question type</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {VISIBLE_QUESTION_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              aria-pressed={selectedQuestionTypes.includes(type)}
+              onClick={() => toggleQuestionType(type)}
+              className={[
+                "min-h-[64px] rounded-md border px-4 py-3 text-left transition",
+                selectedQuestionTypes.includes(type)
+                  ? "border-accent/30 bg-accentSoft/40 text-ink ring-1 ring-accent/20"
+                  : "border-ink/10 bg-white text-ink/70 hover:bg-ink/[0.02]"
+              ].join(" ")}
+            >
+              <span className="text-sm font-medium">{QUESTION_TYPE_LABELS[type]}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -327,15 +243,6 @@ export function GenerateForm({
         <p className="text-xs text-ink/55">
           Current MCQ generation uses exactly 4 options.
         </p>
-        {styleSelectionMode === "preset" ? (
-          <p className="text-xs text-ink/55">
-            Built-in styles resolve to a baked-in question profile before generation starts.
-          </p>
-        ) : selectedProfile?.distribution ? (
-          <p className="text-xs text-ink/55">
-            This style decides the question mix for this run based on the saved profile.
-          </p>
-        ) : null}
       </div>
 
       <Button
@@ -349,9 +256,9 @@ export function GenerateForm({
         <p className="text-xs text-ink/60">
           To generate questions, select at least one study material.
         </p>
-      ) : customStyleMissing && !loading ? (
+      ) : selectedQuestionTypes.length === 0 && !loading ? (
         <p className="text-xs text-ink/60">
-          Select a saved custom style or switch back to a built-in style before generating.
+          Select at least one question type before generating.
         </p>
       ) : null}
       {loading ? (
