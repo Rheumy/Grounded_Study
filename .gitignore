@@ -13,3 +13,8 @@ tsconfig.tsbuildinfo
 test-results/
 .vercel/
 .env*.local
+
+# Never commit secrets in any form
+*.docx
+~
+.env.production.local

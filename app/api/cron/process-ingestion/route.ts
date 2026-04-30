@@ -10,6 +10,14 @@ function getBatchLimit() {
   return Math.max(1, Math.min(Math.floor(configured), 10));
 }
 
+function getGenerationBatchLimit() {
+  const configured = Number(process.env.CRON_GENERATION_BATCH_SIZE ?? 1);
+  if (!Number.isFinite(configured)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(Math.floor(configured), 3));
+}
+
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
@@ -25,14 +33,15 @@ export async function GET(request: Request) {
   }
 
   const batchLimit = getBatchLimit();
-  logger.info({ batchLimit }, "Cron ingestion invocation accepted");
+  const generationBatchLimit = getGenerationBatchLimit();
+  logger.info({ batchLimit, generationBatchLimit }, "Cron job invocation accepted");
 
   const batch = await processIngestionJobsBatch({
     limit: batchLimit,
     source: "cron"
   });
   const generationBatch = await processGenerationJobsBatch({
-    limit: Math.max(1, Math.min(batchLimit, 3)),
+    limit: generationBatchLimit,
     source: "cron"
   });
 

@@ -135,6 +135,7 @@ export async function processGenerationJob(jobId: string) {
     if (claimed.count === 0) {
       throw new Error("Generation job is not available for processing");
     }
+    logger.info({ jobId, status: "PROCESSING" }, "Job transitioned to status PROCESSING");
   }
 
   const documentIds = parseStringArrayJson(job.documentIds);
@@ -185,6 +186,7 @@ export async function processGenerationJob(jobId: string) {
         errorMessage: null
       }
     });
+    logger.info({ jobId, status: "COMPLETED" }, "Job transitioned to status COMPLETED");
 
     logger.info(
       { jobId, userId: job.userId, requestedCount: job.requestedCount, passedCount },
@@ -201,6 +203,7 @@ export async function processGenerationJob(jobId: string) {
         errorMessage: message
       }
     });
+    logger.info({ jobId, status: "FAILED", message }, "Job transitioned to status FAILED");
     logger.error({ jobId, userId: job.userId, message }, "Generation job failed");
     throw error;
   }

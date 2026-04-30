@@ -94,6 +94,7 @@ export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
       },
       "Generation job claimed"
     );
+    logger.info({ jobId: job.id, status: "PROCESSING" }, "Job transitioned to status PROCESSING");
 
     return job;
   });

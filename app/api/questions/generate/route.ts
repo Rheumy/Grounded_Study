@@ -5,7 +5,6 @@ import { prisma } from "@/lib/db/prisma";
 import { type TypeMix } from "@/lib/llm/generate";
 import { resolvePreset } from "@/lib/llm/presets";
 import { enforceQuestionLimit } from "@/lib/billing/usage";
-import { processGenerationJobsBatch } from "@/lib/jobs/run-batch";
 import { logger } from "@/lib/observability/logger";
 
 export async function POST(request: Request) {
@@ -155,6 +154,7 @@ export async function POST(request: Request) {
       {
         userId: user.id,
         jobId: job.id,
+        status: job.status,
         readyDocumentCount: documents.length,
         styleProfileId,
         presetKey: resolvedPreset?.key ?? null,
@@ -162,19 +162,9 @@ export async function POST(request: Request) {
         requestedCount: count,
         typeMix
       },
-      "Generate questions job queued"
+      "Generation job created"
     );
-
-    void processGenerationJobsBatch({ limit: 1, source: "request" }).catch((error) => {
-      logger.error(
-        {
-          userId: user.id,
-          jobId: job.id,
-          message: error instanceof Error ? error.message : String(error)
-        },
-        "Inline generation job kick failed"
-      );
-    });
+    logger.info({ jobId: job.id, status: job.status }, `Job transitioned to status ${job.status}`);
 
     return NextResponse.json({ jobId: job.id }, { status: 202 });
   } catch (error) {

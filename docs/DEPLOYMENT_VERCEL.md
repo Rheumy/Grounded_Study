@@ -23,8 +23,9 @@ Set at least:
 Optional:
 - `OPENAI_API_KEY` (required for ingestion + generation)
 - `BLOB_READ_WRITE_TOKEN` (enables uploads in production)
-- `CRON_SECRET` (only needed if you later enable a scheduled cron route)
-- `CRON_INGESTION_BATCH_SIZE` (only needed if you later enable scheduled cron processing)
+- `CRON_SECRET` (required for scheduled ingestion/generation processing)
+- `CRON_INGESTION_BATCH_SIZE` (optional scheduled job batch size)
+- `CRON_GENERATION_BATCH_SIZE` (optional scheduled generation batch size, defaults to 1)
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_ENABLED=true`
 - `BETA_ALLOWED_EMAILS` (comma-separated private-beta allowlist for Google and magic-link sign-in)
@@ -46,8 +47,9 @@ Optional:
 
 - Run worker locally for dev (`pnpm worker`).
 - Manual admin trigger: call `/api/admin/process-jobs` with `Authorization: Bearer $ADMIN_JOB_TOKEN`.
-- Hobby-safe default: no automatic Vercel cron schedule is configured in the repo.
-- Optional future automation: `/api/cron/process-ingestion` remains available in code and can be protected with `CRON_SECRET` if you later add a supported schedule on a higher Vercel plan or another scheduler.
+- Vercel cron is configured in `vercel.json` to call `/api/cron/process-ingestion`.
+- The cron route processes both ingestion jobs and pending generation jobs.
+- The cron route requires `Authorization: Bearer $CRON_SECRET`; Vercel Cron sends this when `CRON_SECRET` is configured.
 
 ## 7. Custom Domain
 

@@ -7,7 +7,7 @@ import {
 import { processGenerationJob, processIngestionJob } from "@/lib/jobs/processor";
 import { logger } from "@/lib/observability/logger";
 
-export type IngestionBatchSource = "cron" | "admin" | "request";
+export type IngestionBatchSource = "cron" | "admin";
 
 export async function processIngestionJobsBatch(params: {
   limit: number;
