@@ -34,12 +34,13 @@ Current commercial state:
 - not public launch ready
 
 ## Current operating assumptions
-- Google auth is the only real production auth path.
-- Google sign-in in the live beta is restricted by `BETA_ALLOWED_EMAILS`.
-- Email magic link exists in code but is not production-ready.
+- Google sign-in and email magic link are both production-ready auth paths.
+- Google sign-in and email magic link in the live beta are restricted by `BETA_ALLOWED_EMAILS`.
+- Email magic link is wired via Resend with DKIM/SPF/DMARC verified on `sulcai.com`, gated behind `NEXT_PUBLIC_EMAIL_AUTH_ENABLED`, and enforces the `BETA_ALLOWED_EMAILS` allowlist.
 - `grounded-study-update` is the only Vercel project that should be treated as active.
 - `sulcai.com` is the live private-beta domain.
 - `feature/question-format-system-no-ci` is the active stabilization branch.
+- Vercel Pro is active, and Vercel Cron is configured to call `/api/cron/process-ingestion` every minute with `CRON_SECRET`.
 - Manual ingestion still exists as fallback/admin tooling, but common learner flow now attempts auto-ingestion after upload.
 - Preview deployments were previously used as the main source of truth during stabilization.
 - Vercel custom domains serve Production deployments, so Production Branch alignment matters.
@@ -116,14 +117,22 @@ Current invariant:
 
 ## What is already working
 - Google sign-in
+- Email magic link sign-in via Resend on `sulcai.com`
+- beta allowlist enforcement for both Google and magic link
+- Account page with self-delete
 - Upload flow
 - learner-triggered auto-ingestion attempt after upload
+- generation-at-upload flow after uploaded material becomes ready
 - documents can reach READY
 - Question Format page exists and supports text/file inputs
-- Generate Questions page exists with simplified runtime type selection
+- Generate Questions page exists with simplified runtime type selection and background `GenerationJob` processing
+- Vercel Cron processes ingestion and generation jobs as the production backstop
 - Practice Questions and Mock Exam surfaces are working
+- Practice tabs support New, All, and Previously Incorrect question sources
 - practice summaries and exam review screens exist
+- Mock Exam setup includes a question type selector
 - learner-facing citations are cleaner and chunk IDs are no longer exposed
+- expanded display-time sanitisation removes retrieval jargon from stems, options, answers, rationales, feedback, and citations
 - logging and retries exist around generation
 - at least one generated question with citation has succeeded end-to-end
 

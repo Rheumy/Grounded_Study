@@ -130,31 +130,57 @@ export function SignInPageClient() {
       title="Sign in"
       description="Private beta access is limited to approved email addresses."
     >
-      <label className="flex items-start gap-3 rounded-lg border border-ink/10 bg-ink/[0.02] p-4 text-sm text-ink/70">
-        <input
-          type="checkbox"
-          checked={acceptedLegal}
-          onChange={(event) => setAcceptedLegal(event.target.checked)}
-          className="mt-1 h-4 w-4 rounded border border-ink/20"
-        />
-        <span>
-          <LegalConsentText />
-        </span>
-      </label>
+      <div className="space-y-3">
+        <label className="flex items-start gap-3 rounded-lg border border-ink/10 bg-ink/[0.02] p-4 text-sm text-ink/70">
+          <input
+            type="checkbox"
+            checked={acceptedLegal}
+            onChange={(event) => setAcceptedLegal(event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border border-ink/20"
+          />
+          <span>
+            <LegalConsentText />
+          </span>
+        </label>
+
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+          Only upload material you are legally allowed to use. Do not upload pirated,
+          infringing, unlawfully obtained, confidential, or unauthorised material,
+          including textbooks, journal articles, course packs, paid resources, publisher
+          materials, examination materials, patient records, student records, or third-party
+          personal information unless you have the legal right, permission, or lawful basis
+          to do so.
+        </div>
+      </div>
 
       {emailAuthEnabled ? (
-        <form className="space-y-3" onSubmit={submitMagicLink}>
-          <Input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-          <Button type="submit" className="w-full" disabled={authDisabled || sendingLink}>
-            {sendingLink ? "Sending link..." : "Send magic link"}
-          </Button>
-        </form>
+        <div className="space-y-4">
+          <form className="space-y-3 rounded-lg border border-ink/10 bg-white p-4" onSubmit={submitMagicLink}>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-ink">Sign in with email</p>
+              <p className="text-xs text-ink/55">We&apos;ll send a private beta sign-in link.</p>
+            </div>
+            <Input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={authDisabled || sendingLink}
+              required
+            />
+            <Button type="submit" className="w-full" disabled={authDisabled || sendingLink}>
+              {sendingLink ? "Sending link..." : "Send magic link"}
+            </Button>
+          </form>
+
+          {googleEnabled ? (
+            <div className="flex items-center gap-3 text-xs uppercase tracking-[0.16em] text-ink/35">
+              <span className="h-px flex-1 bg-ink/10" />
+              <span>or</span>
+              <span className="h-px flex-1 bg-ink/10" />
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <Button

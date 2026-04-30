@@ -8,6 +8,8 @@
 - Do not rely on production deploys for feature-branch debugging.
 - Live beta access is restricted by `BETA_ALLOWED_EMAILS`.
 - Vercel custom domains serve Production deployments, so Production Branch alignment matters.
+- Vercel Pro is active, with Vercel Cron configured for `/api/cron/process-ingestion`.
+- `CRON_SECRET` is required and configured in Production.
 
 ## Current deployment gotcha
 - If `sulcai.com` shows an older UI, first check the Vercel Production Branch.
@@ -15,19 +17,25 @@
 - During stabilization, preview deployments were often treated as the source of truth, so it is possible for preview and Production to diverge.
 
 ## What is currently true
-- Google sign-in is the active auth path.
-- Google access is restricted to the beta email allowlist in `BETA_ALLOWED_EMAILS`.
+- Google sign-in and email magic link are both production-ready auth paths.
+- Email magic link is wired via Resend with DKIM/SPF/DMARC verified on `sulcai.com`.
+- Google and magic-link access are restricted to the beta email allowlist in `BETA_ALLOWED_EMAILS`.
 - Upload works and learner flow now attempts ingestion automatically after upload.
 - Documents can reach `READY`.
+- Upload can hand users into generation-at-upload, with progress shown through background generation jobs.
 - Question Format page exists and supports text-only, file-only, and text+file creation flows.
 - At least one generated question with citation has succeeded.
+- Generate Questions now queues `GenerationJob` rows and shows resumable progress while Vercel Cron processes pending generation jobs.
 - Practice Questions can display generated questions and provide cleaner structured feedback.
+- Practice has New / All / Previously Incorrect tabs, with corrected session numbering.
 - TRUE_FALSE questions can render and are graded deterministically.
 - Mock Exam now returns a persistent review/results view after submit.
+- Mock Exam setup includes a question type selector for multiple choice, true/false, and mixed exams.
 - Short-answer review is presented separately from deterministic objective scoring.
 - Generate Questions no longer exposes the saved Question Format selector in the main runtime flow.
-- Learner-facing wording has been cleaned up to avoid “excerpt/excerpts” phrasing.
+- Learner-facing wording has expanded display-time sanitisation for retrieval jargon in stems, options, answers, rationales, feedback, and citations.
 - Prompting has been upgraded for stronger grounding, verifier rigor, short-answer feedback quality, and broader domain-agnostic assessment style.
+- Account page supports self-delete.
 
 ## Project status
 Grounded generation is no longer hypothetical.
@@ -53,6 +61,15 @@ Current focus has shifted to:
 5. Generate flow is simplified and no longer asks users to choose both Question Format and runtime question type in a conflicting way.
 6. Short-answer review is framed as model-answer-based review rather than misleading hard scoring.
 7. Retrieval-jargon leakage into learner-facing wording has been reduced via prompt and display cleanup.
+8. Generation now runs through background `GenerationJob` rows with a Vercel Cron processor backstop.
+9. Sign-in includes production-ready Google and Resend magic-link paths behind the beta allowlist.
+10. Account self-delete, Practice source tabs, and Mock Exam question type selection are in place.
+
+## Recent changes since stabilization began
+- Legal documents have been revised to remove cross-user reuse language.
+- Legal documents now state that user content is not used for model training.
+- A Copyright Takedown Policy has been added and linked from the sign-in consent flow.
+- The legal consent version has been bumped so existing beta users can be re-prompted.
 
 ## Recent classes of bugs already encountered
 1. Deployment mismatch

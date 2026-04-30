@@ -15,6 +15,10 @@ const LEGAL_PAGES = {
   "acceptable-use": {
     title: "Acceptable Use Policy",
     filename: "acceptable-use.md"
+  },
+  "copyright-takedown": {
+    title: "Copyright Takedown Policy",
+    filename: "Copyright_Takedown_Policy.md"
   }
 } as const;
 
@@ -49,4 +53,3 @@ export default async function LegalPage({
     </div>
   );
 }
-

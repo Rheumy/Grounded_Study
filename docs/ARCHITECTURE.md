@@ -3,9 +3,9 @@
 ## Overview
 
 - **Next.js App Router** for UI + API routes
-- **Auth.js/NextAuth** with Email magic link (safe stub) + optional Google OAuth
+- **Auth.js/NextAuth** with production Google OAuth and Resend email magic link auth
 - **Postgres + pgvector** for relational data and embeddings
-- **DB-backed job queue** for ingestion (no Redis)
+- **DB-backed job queue** for ingestion and generation (no Redis)
 - **OpenAI** for embeddings, OCR, generation, and verification
 
 ## Data Flow
@@ -33,8 +33,10 @@
 ## Jobs
 
 - `IngestionJob` table stores job state.
+- `GenerationJob` table stores background question-generation state and progress.
 - Worker loop (`pnpm worker`) claims jobs with `FOR UPDATE SKIP LOCKED`.
-- Admin endpoint `/api/admin/process-jobs` can process jobs via cron.
+- Admin endpoint `/api/admin/process-jobs` can process jobs manually.
+- Vercel Cron calls `/api/cron/process-ingestion` to process ingestion and generation jobs.
 
 ## Storage
 

@@ -31,7 +31,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      legalAcceptedAt: true
+      legalAcceptedAt: true,
+      legalVersion: true
     }
   });
 
@@ -52,6 +53,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } else {
       redirect("/legal/accept");
     }
+  }
+
+  if (user.legalAcceptedAt && user.legalVersion !== LEGAL_VERSION) {
+    redirect("/legal/accept");
   }
 
   const isAdmin = (session.user as { isAdmin?: boolean } | undefined)?.isAdmin ?? false;

@@ -1,15 +1,9 @@
 # Known Bugs / Open Issues
 
-## 1. Practice feedback wording is too vague
-Current observed behavior:
-- after answering a TRUE_FALSE question, feedback may show “Needs review”
-- explanation may imply the answer is right, but does not directly say “Correct” or “Incorrect”
-- correct answer is not stated prominently enough
+## 1. Practice feedback wording was too vague — closed
+Status: fixed.
 
-Desired behavior:
-- explicit correctness label
-- explicit correct answer
-- then rationale and citation
+Practice now shows explicit objective correctness labels and the correct answer, and display-time sanitisation removes retrieval jargon from stems, options, answers, rationales, feedback, and citations.
 
 ## 2. Old saved Question Formats may still be unreliable
 Saved profiles created before major normalization fixes may contain malformed schema JSON.
@@ -27,3 +21,6 @@ At least one successful grounded generation has occurred, but the app still need
 - MCQ
 - SHORT_ANSWER
 - TRUE_FALSE
+
+## 5. Consent re-prompt needs beta validation
+Legal consent versioning now redirects users with an old `legalVersion` through `/legal/accept`, but this should be validated on the latest deployment with a real allowlisted beta account after release.

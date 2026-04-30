@@ -11,9 +11,10 @@ Grounded Study is a grounded question-generation app built on uploaded study mat
 - Active Vercel project: `grounded-study-update`
 - Live beta domain: `sulcai.com`
 - Active branch for stabilization: `feature/question-format-system-no-ci`
-- Production auth path: Google sign-in
+- Production auth paths: Google sign-in and Resend magic link
 - Beta access allowlist: `BETA_ALLOWED_EMAILS`
 - Admin access is controlled by `ADMIN_EMAIL`
+- Vercel Cron is wired for `/api/cron/process-ingestion`; `CRON_SECRET` is required.
 
 ## Current priorities
 1. Prove repeatable fresh generation across MCQ / SHORT_ANSWER / TRUE_FALSE.
@@ -116,6 +117,17 @@ Manual admin ingestion is fallback/debug tooling, not the preferred learner path
 - `sulcai.com` serves the Vercel Production deployment.
 - Preview deployments were previously used as the source of truth during stabilization.
 - If the live beta looks older than expected, first check Production Branch alignment before debugging the app itself.
+
+### 15. Auth reality rule
+- Google sign-in and email magic link are both production-ready.
+- Magic link uses Resend with DKIM/SPF/DMARC verified on `sulcai.com`.
+- Both auth paths enforce `BETA_ALLOWED_EMAILS`.
+- Do not remove or downgrade magic link auth unless explicitly requested.
+
+### 16. Job processing reality rule
+- Vercel Cron is configured to call `/api/cron/process-ingestion`.
+- The cron route requires `CRON_SECRET`.
+- The cron processor handles both ingestion jobs and pending `GenerationJob` rows.
 
 ## Recommended debug workflow
 1. Reproduce on latest preview.
