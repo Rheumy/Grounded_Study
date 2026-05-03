@@ -18,12 +18,12 @@ export async function POST(request: Request) {
   const generationBatch =
     ingestionBatch.claimed === 0
       ? await processGenerationJobsBatch({ limit: 1, source: "admin" })
-      : { claimed: 0, results: [] };
+      : { claimed: 0, completed: 0, failed: 0, reaped: 0, results: [] };
   const claimed = ingestionBatch.claimed + generationBatch.claimed;
 
   if (claimed === 0) {
     logger.info("Manual admin job processing found no queued jobs");
-    return NextResponse.json({ ok: true, message: "No jobs" });
+    return NextResponse.json({ ok: true, message: "No jobs", reaped: generationBatch.reaped });
   }
 
   const failedJob = [...ingestionBatch.results, ...generationBatch.results].find(

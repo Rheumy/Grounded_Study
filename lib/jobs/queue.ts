@@ -80,7 +80,7 @@ export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
       where: { id: job.id },
       data: {
         status: "PROCESSING",
-        startedAt: job.startedAt ?? now,
+        startedAt: now,
         currentPhase: "Starting generation",
         errorMessage: null
       }
@@ -98,4 +98,27 @@ export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
 
     return job;
   });
+}
+
+export async function reapStuckGenerationJobs(): Promise<number> {
+  const lockExpiry = new Date(Date.now() - LOCK_TIMEOUT_MS);
+
+  const result = await prisma.generationJob.updateMany({
+    where: {
+      status: "PROCESSING",
+      startedAt: { lt: lockExpiry }
+    },
+    data: {
+      status: "FAILED",
+      currentPhase: "Generation timed out",
+      errorMessage: "Generation timed out. Please try again.",
+      completedAt: new Date()
+    }
+  });
+
+  if (result.count > 0) {
+    logger.warn({ reapedCount: result.count }, "Reaped stuck generation jobs");
+  }
+
+  return result.count;
 }

@@ -5,6 +5,7 @@ import { logger } from "@/lib/observability/logger";
 import { incrementUsage } from "@/lib/billing/usage";
 import { generateQuestions, type GenerationProgressEvent, type TypeMix } from "@/lib/llm/generate";
 import { resolvePreset } from "@/lib/llm/presets";
+import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
 
 export async function processIngestionJob(jobId: string) {
   const job = await prisma.ingestionJob.findUnique({
@@ -193,7 +194,7 @@ export async function processGenerationJob(jobId: string) {
       "Generation job completed"
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Generation failed";
+    const message = sanitizeGenerationErrorMessage(error);
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {

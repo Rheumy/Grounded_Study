@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
+import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
 
 function serializeJob(job: {
   id: string;
@@ -17,7 +18,7 @@ function serializeJob(job: {
     currentPhase: job.currentPhase,
     passedCount: job.passedCount,
     requestedCount: job.requestedCount,
-    errorMessage: job.errorMessage,
+    errorMessage: job.errorMessage ? sanitizeGenerationErrorMessage(job.errorMessage) : null,
     completedAt: job.completedAt?.toISOString() ?? null
   };
 }

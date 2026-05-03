@@ -50,6 +50,7 @@ export async function GET(request: Request) {
     claimed: batch.claimed + generationBatch.claimed,
     completed: batch.completed + generationBatch.completed,
     failed: batch.failed + generationBatch.failed,
+    reaped: generationBatch.reaped ?? 0,
     results: [...batch.results, ...generationBatch.results]
   });
 }

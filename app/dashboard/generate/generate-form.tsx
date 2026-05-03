@@ -129,6 +129,11 @@ export function GenerateForm({
       } else if (progress.status === "COMPLETED") {
         setLastCompletedJob(progress);
         setStatus("Your last generation completed.");
+      } else if (progress.status === "FAILED") {
+        setJobProgress(progress);
+        setLoading(false);
+        setError(progress.errorMessage ?? "Generation failed. Please try again.");
+        setStatus(null);
       }
     }
 

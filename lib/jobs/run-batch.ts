@@ -2,7 +2,8 @@ import {
   claimNextGenerationJob,
   claimNextIngestionJob,
   markJobCompleted,
-  markJobFailed
+  markJobFailed,
+  reapStuckGenerationJobs
 } from "@/lib/jobs/queue";
 import { processGenerationJob, processIngestionJob } from "@/lib/jobs/processor";
 import { logger } from "@/lib/observability/logger";
@@ -64,6 +65,7 @@ export async function processGenerationJobsBatch(params: {
   const results: Array<{ jobId: string; status: "completed" | "failed"; error?: string }> = [];
 
   logger.info({ source: params.source, limit }, "Generation batch invocation started");
+  const reaped = await reapStuckGenerationJobs();
 
   for (let index = 0; index < limit; index += 1) {
     const job = await claimNextGenerationJob();
@@ -89,7 +91,7 @@ export async function processGenerationJobsBatch(params: {
   const failed = results.length - completed;
 
   logger.info(
-    { source: params.source, claimed: results.length, completed, failed },
+    { source: params.source, claimed: results.length, completed, failed, reaped },
     "Generation batch invocation finished"
   );
 
@@ -97,6 +99,7 @@ export async function processGenerationJobsBatch(params: {
     claimed: results.length,
     completed,
     failed,
+    reaped,
     results
   };
 }
