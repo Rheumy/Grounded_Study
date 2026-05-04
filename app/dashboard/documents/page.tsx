@@ -21,6 +21,7 @@ export default async function DocumentsPage() {
     id: doc.id,
     title: doc.title,
     status: doc.status,
+    createdAt: doc.createdAt.toISOString(),
     latestError: doc.ingestionJobs[0]?.lastError ?? null
   }));
 

@@ -21,6 +21,7 @@ type UploadItem = {
   status: UploadStatus;
   documentId?: string;
   error?: string;
+  message?: string;
 };
 
 export type PersistedUploadItem = {
@@ -34,12 +35,15 @@ export type PersistedUploadItem = {
 
 type DocumentStatusForUpload = {
   id: string;
+  title?: string;
   status: string;
+  createdAt?: string | Date;
 };
 
 export const RECENT_UPLOAD_BATCH_STORAGE_KEY = "grounded-study:recent-upload-batch:v1";
 const RECENT_UPLOAD_STALE_MS = 2 * 60 * 60 * 1000;
 const INTERRUPTED_UPLOAD_MESSAGE = "This file was not uploaded before you left this page. Please select it again.";
+const RECONCILED_UPLOAD_MESSAGE = "This document was uploaded and is shown below.";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -123,26 +127,76 @@ export function toPersistedUploadItems(
 
 export function restorePersistedUploadItems(
   items: PersistedUploadItem[],
-  now = Date.now()
+  now = Date.now(),
+  documents: DocumentStatusForUpload[] = []
 ): UploadItem[] {
   return items
     .filter((item) => now - item.updatedAt <= RECENT_UPLOAD_STALE_MS)
-    .map((item) => {
-      const wasSelectedOnly =
-        !item.documentId &&
-        (item.status === "waiting" ||
-          item.status === "uploading" ||
-          item.status === "finalizing" ||
-          item.status === "ingesting");
+    .map((item) => reconcilePersistedUploadItem(item, documents));
+}
 
-      return {
-        id: item.id,
-        name: item.name,
-        status: wasSelectedOnly ? "interrupted" : item.status,
-        documentId: item.documentId,
-        error: wasSelectedOnly ? INTERRUPTED_UPLOAD_MESSAGE : item.error
-      };
-    });
+function mapDocumentStatusToUploadStatus(status: string): UploadStatus {
+  if (status === "READY") return "ready";
+  if (status === "QUEUED" || status === "PROCESSING") return "ingesting";
+  if (status === "FAILED" || status === "OCR_DISABLED") return "failed";
+  return "ingesting";
+}
+
+function getDocumentCreatedAtMs(document: DocumentStatusForUpload) {
+  if (!document.createdAt) return 0;
+  const value = document.createdAt instanceof Date ? document.createdAt.getTime() : Date.parse(document.createdAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function findRestoredUploadDocumentMatch(
+  item: PersistedUploadItem,
+  documents: DocumentStatusForUpload[]
+) {
+  if (item.documentId) {
+    return documents.find((document) => document.id === item.documentId);
+  }
+
+  const restoredName = item.name.trim();
+  if (!restoredName) return undefined;
+
+  const matches = documents
+    .filter((document) => (document.title ?? "").trim() === restoredName)
+    .sort((left, right) => getDocumentCreatedAtMs(right) - getDocumentCreatedAtMs(left));
+
+  return matches[0];
+}
+
+export function reconcilePersistedUploadItem(
+  item: PersistedUploadItem,
+  documents: DocumentStatusForUpload[]
+): UploadItem {
+  const matchingDocument = findRestoredUploadDocumentMatch(item, documents);
+
+  if (matchingDocument) {
+    return {
+      id: item.id,
+      name: item.name,
+      status: mapDocumentStatusToUploadStatus(matchingDocument.status),
+      documentId: matchingDocument.id,
+      error:
+        matchingDocument.status === "FAILED" || matchingDocument.status === "OCR_DISABLED"
+          ? item.error
+          : undefined,
+      message: RECONCILED_UPLOAD_MESSAGE
+    };
+  }
+
+  const wasSelectedOnly =
+    !item.documentId &&
+    (item.status === "waiting" || item.status === "uploading" || item.status === "finalizing");
+
+  return {
+    id: item.id,
+    name: item.name,
+    status: wasSelectedOnly ? "interrupted" : item.status,
+    documentId: item.documentId,
+    error: wasSelectedOnly ? INTERRUPTED_UPLOAD_MESSAGE : item.error
+  };
 }
 
 export function writePersistedUploadItems(
@@ -155,7 +209,8 @@ export function writePersistedUploadItems(
 
 export function readPersistedUploadItems(
   storage: Pick<Storage, "getItem" | "removeItem">,
-  now = Date.now()
+  now = Date.now(),
+  documents: DocumentStatusForUpload[] = []
 ) {
   const raw = storage.getItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
   if (!raw) return [];
@@ -166,7 +221,7 @@ export function readPersistedUploadItems(
       storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
       return [];
     }
-    const restored = restorePersistedUploadItems(parsed, now);
+    const restored = restorePersistedUploadItems(parsed, now, documents);
     if (restored.length === 0) {
       storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
     }
@@ -290,7 +345,7 @@ export function UploadForm({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const restoredItems = readPersistedUploadItems(window.sessionStorage);
+    const restoredItems = readPersistedUploadItems(window.sessionStorage, Date.now(), documents);
     if (restoredItems.length === 0) return;
 
     setItems(restoredItems);
@@ -305,7 +360,7 @@ export function UploadForm({
     if (hasDocumentBackedItems) {
       setUploadStatus("Recently uploaded documents continue processing below.");
     }
-  }, []);
+  }, [documents]);
 
   const readyDocumentIds = useMemo(
     () => getReadyUploadDocumentIds(items, documents),
@@ -316,7 +371,7 @@ export function UploadForm({
   const hasDocumentBackedItems = items.some((item) => Boolean(item.documentId));
   const hasCompletedBatch =
     items.length > 0 && items.every((item) => item.status === "ready" || item.status === "failed" || item.status === "interrupted");
-  const canGenerateFromReadyDocuments = !loading && items.length > 1 && readyDocumentIds.length > 0;
+  const canGenerateFromReadyDocuments = !loading && readyDocumentIds.length > 0;
 
   async function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -649,6 +704,9 @@ export function UploadForm({
                 </span>
                 {item.error ? (
                   <p className="text-xs text-danger sm:col-span-2">{item.error}</p>
+                ) : null}
+                {item.message ? (
+                  <p className="text-xs text-ink/60 sm:col-span-2">{item.message}</p>
                 ) : null}
               </li>
             ))}

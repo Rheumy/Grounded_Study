@@ -24,6 +24,7 @@ export async function GET() {
       id: document.id,
       title: document.title,
       status: document.status,
+      createdAt: document.createdAt.toISOString(),
       latestError: document.ingestionJobs[0]?.lastError ?? null
     }))
   });
