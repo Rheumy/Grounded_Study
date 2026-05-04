@@ -38,6 +38,7 @@ export default async function DocumentsPage() {
           <UploadForm
             userId={user.id}
             useClientUploads={Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.VERCEL)}
+            documents={safeDocs}
           />
         </CardContent>
       </Card>

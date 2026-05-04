@@ -1,20 +1,45 @@
 "use client";
 
 import { put } from "@vercel/blob/client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-type UploadStatus = "waiting" | "uploading" | "finalizing" | "ingesting" | "ready" | "failed";
+type UploadStatus =
+  | "waiting"
+  | "uploading"
+  | "finalizing"
+  | "ingesting"
+  | "ready"
+  | "failed"
+  | "interrupted";
 
 type UploadItem = {
   id: string;
-  file: File;
+  file?: File;
   name: string;
   status: UploadStatus;
   documentId?: string;
   error?: string;
 };
+
+export type PersistedUploadItem = {
+  id: string;
+  name: string;
+  status: UploadStatus;
+  documentId?: string;
+  error?: string;
+  updatedAt: number;
+};
+
+type DocumentStatusForUpload = {
+  id: string;
+  status: string;
+};
+
+export const RECENT_UPLOAD_BATCH_STORAGE_KEY = "grounded-study:recent-upload-batch:v1";
+const RECENT_UPLOAD_STALE_MS = 2 * 60 * 60 * 1000;
+const INTERRUPTED_UPLOAD_MESSAGE = "This file was not uploaded before you left this page. Please select it again.";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -47,7 +72,8 @@ const statusLabels: Record<UploadStatus, string> = {
   finalizing: "Uploading",
   ingesting: "Processing",
   ready: "Ready",
-  failed: "Failed"
+  failed: "Failed",
+  interrupted: "Needs selection"
 };
 
 function createUploadItem(file: File): UploadItem {
@@ -65,7 +91,8 @@ export function getUploadSummary(items: Array<Pick<UploadItem, "status">>) {
     uploading: 0,
     processing: 0,
     ready: 0,
-    failed: 0
+    failed: 0,
+    interrupted: 0
   };
 
   for (const item of items) {
@@ -74,9 +101,101 @@ export function getUploadSummary(items: Array<Pick<UploadItem, "status">>) {
     if (item.status === "ingesting") counts.processing += 1;
     if (item.status === "ready") counts.ready += 1;
     if (item.status === "failed") counts.failed += 1;
+    if (item.status === "interrupted") counts.interrupted += 1;
   }
 
   return counts;
+}
+
+export function toPersistedUploadItems(
+  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error">>,
+  now = Date.now()
+): PersistedUploadItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    status: item.status,
+    documentId: item.documentId,
+    error: item.error,
+    updatedAt: now
+  }));
+}
+
+export function restorePersistedUploadItems(
+  items: PersistedUploadItem[],
+  now = Date.now()
+): UploadItem[] {
+  return items
+    .filter((item) => now - item.updatedAt <= RECENT_UPLOAD_STALE_MS)
+    .map((item) => {
+      const wasSelectedOnly =
+        !item.documentId &&
+        (item.status === "waiting" ||
+          item.status === "uploading" ||
+          item.status === "finalizing" ||
+          item.status === "ingesting");
+
+      return {
+        id: item.id,
+        name: item.name,
+        status: wasSelectedOnly ? "interrupted" : item.status,
+        documentId: item.documentId,
+        error: wasSelectedOnly ? INTERRUPTED_UPLOAD_MESSAGE : item.error
+      };
+    });
+}
+
+export function writePersistedUploadItems(
+  storage: Pick<Storage, "setItem">,
+  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error">>,
+  now = Date.now()
+) {
+  storage.setItem(RECENT_UPLOAD_BATCH_STORAGE_KEY, JSON.stringify(toPersistedUploadItems(items, now)));
+}
+
+export function readPersistedUploadItems(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  now = Date.now()
+) {
+  const raw = storage.getItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as PersistedUploadItem[];
+    if (!Array.isArray(parsed)) {
+      storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
+      return [];
+    }
+    const restored = restorePersistedUploadItems(parsed, now);
+    if (restored.length === 0) {
+      storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
+    }
+    return restored;
+  } catch {
+    storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
+    return [];
+  }
+}
+
+export function clearPersistedUploadItems(storage: Pick<Storage, "removeItem">) {
+  storage.removeItem(RECENT_UPLOAD_BATCH_STORAGE_KEY);
+}
+
+export function getReadyUploadDocumentIds(
+  items: Array<Pick<UploadItem, "documentId" | "status">>,
+  documents: DocumentStatusForUpload[] = []
+) {
+  const documentStatusById = new Map(documents.map((document) => [document.id, document.status]));
+  const readyIds = new Set<string>();
+
+  for (const item of items) {
+    if (!item.documentId) continue;
+    if (item.status === "ready" || documentStatusById.get(item.documentId) === "READY") {
+      readyIds.add(item.documentId);
+    }
+  }
+
+  return Array.from(readyIds);
 }
 
 export function buildAutogeneratePracticeUrl(params: {
@@ -140,10 +259,12 @@ async function parseErrorResponse(response: Response, fallback: string) {
 
 export function UploadForm({
   userId,
-  useClientUploads
+  useClientUploads,
+  documents = []
 }: {
   userId: string;
   useClientUploads: boolean;
+  documents?: DocumentStatusForUpload[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -153,15 +274,48 @@ export function UploadForm({
   const [questionCount, setQuestionCount] = useState(10);
   const router = useRouter();
 
-  const updateItem = (id: string, patch: Partial<UploadItem>) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  const persistItems = (nextItems: UploadItem[]) => {
+    if (typeof window === "undefined") return;
+    writePersistedUploadItems(window.sessionStorage, nextItems);
   };
 
-  const readyDocumentIds = items
-    .filter((item) => item.status === "ready" && item.documentId)
-    .map((item) => item.documentId as string);
+  const updateItem = (id: string, patch: Partial<UploadItem>) => {
+    setItems((prev) => {
+      const nextItems = prev.map((item) => (item.id === id ? { ...item, ...patch } : item));
+      persistItems(nextItems);
+      return nextItems;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const restoredItems = readPersistedUploadItems(window.sessionStorage);
+    if (restoredItems.length === 0) return;
+
+    setItems(restoredItems);
+    persistItems(restoredItems);
+
+    const hasInterruptedItems = restoredItems.some((item) => item.status === "interrupted");
+    const hasDocumentBackedItems = restoredItems.some((item) => Boolean(item.documentId));
+    if (hasInterruptedItems) {
+      setUploadStatus("Some selected files were not uploaded before you left this page. Please select them again.");
+      return;
+    }
+    if (hasDocumentBackedItems) {
+      setUploadStatus("Recently uploaded documents continue processing below.");
+    }
+  }, []);
+
+  const readyDocumentIds = useMemo(
+    () => getReadyUploadDocumentIds(items, documents),
+    [documents, items]
+  );
   const summary = getUploadSummary(items);
-  const hasCompletedBatch = items.length > 0 && items.every((item) => item.status === "ready" || item.status === "failed");
+  const hasInterruptedItems = items.some((item) => item.status === "interrupted");
+  const hasDocumentBackedItems = items.some((item) => Boolean(item.documentId));
+  const hasCompletedBatch =
+    items.length > 0 && items.every((item) => item.status === "ready" || item.status === "failed" || item.status === "interrupted");
   const canGenerateFromReadyDocuments = !loading && items.length > 1 && readyDocumentIds.length > 0;
 
   async function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
@@ -180,6 +334,9 @@ export function UploadForm({
 
   async function uploadOneFile(item: UploadItem) {
     const file = item.file;
+    if (!file) {
+      throw new Error("Please select this file again.");
+    }
     let response: Response;
 
     updateItem(item.id, { status: "uploading", error: undefined });
@@ -345,6 +502,7 @@ export function UploadForm({
 
     const batchItems = selectedFiles.map(createUploadItem);
     setItems(batchItems);
+    persistItems(batchItems);
     setUploadStatus(`${batchItems.length} ${batchItems.length === 1 ? "file" : "files"} selected`);
 
     const readyIds = await runUploadBatch({
@@ -389,6 +547,9 @@ export function UploadForm({
     setItems([]);
     setError(null);
     setUploadStatus(null);
+    if (typeof window !== "undefined") {
+      clearPersistedUploadItems(window.sessionStorage);
+    }
   };
 
   const generateFromReadyDocuments = () => {
@@ -417,7 +578,9 @@ export function UploadForm({
         data-testid="document-upload-input"
         onChange={(event) => {
           const selectedFiles = Array.from(event.currentTarget.files ?? []);
-          setItems(selectedFiles.map(createUploadItem));
+          const nextItems = selectedFiles.map(createUploadItem);
+          setItems(nextItems);
+          persistItems(nextItems);
           setError(null);
           setUploadStatus(
             selectedFiles.length > 0
@@ -438,7 +601,7 @@ export function UploadForm({
                 onClick={resetSelection}
                 className="text-xs font-medium text-ink/55 hover:text-ink"
               >
-                Clear
+                Clear upload history
               </button>
             ) : null}
           </div>
@@ -449,6 +612,22 @@ export function UploadForm({
             <span>Ready: {summary.ready}</span>
             <span>Failed: {summary.failed}</span>
           </div>
+          {summary.interrupted > 0 ? (
+            <p className="text-xs text-ink/60">Needs selection: {summary.interrupted}</p>
+          ) : null}
+          {loading ? (
+            <p className="text-xs text-ink/60">
+              Stay on this page until uploads start. Once a document appears below, processing will continue even if you navigate away.
+            </p>
+          ) : null}
+          {!loading && hasInterruptedItems ? (
+            <p className="text-xs text-ink/60">
+              Some selected files were not uploaded before you left this page. Please select them again.
+            </p>
+          ) : null}
+          {!loading && hasDocumentBackedItems ? (
+            <p className="text-xs text-ink/60">Recently uploaded documents continue processing below.</p>
+          ) : null}
           <ul className="space-y-2">
             {items.map((item) => (
               <li
@@ -461,7 +640,7 @@ export function UploadForm({
                     "text-xs font-medium",
                     item.status === "ready"
                       ? "text-accent"
-                      : item.status === "failed"
+                      : item.status === "failed" || item.status === "interrupted"
                         ? "text-danger"
                         : "text-ink/55"
                   ].join(" ")}
