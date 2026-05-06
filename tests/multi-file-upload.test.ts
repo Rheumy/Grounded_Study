@@ -29,8 +29,10 @@ import {
   readPersistedUploadItems,
   RECENT_UPLOAD_BATCH_STORAGE_KEY,
   reconcilePersistedUploadItem,
+  reconcileUploadItemsWithDocuments,
   restorePersistedUploadItems,
   runUploadBatch,
+  UPLOAD_RECONCILE_GRACE_MS,
   writePersistedUploadItems
 } from "@/app/dashboard/documents/upload-form";
 import {
@@ -173,18 +175,20 @@ describe("multi-file upload helpers", () => {
     expect("file" in restored[0]).toBe(false);
   });
 
-  it("marks selected-only in-flight items as interrupted after remount", () => {
+  it("restores in-flight items without document IDs as checking after remount", () => {
     const restored = restorePersistedUploadItems(
       [
         { id: "waiting", name: "waiting.pdf", status: "waiting", updatedAt: 1000 },
         { id: "uploading", name: "uploading.pdf", status: "uploading", updatedAt: 1000 },
-        { id: "finalizing", name: "finalizing.pdf", status: "finalizing", updatedAt: 1000 }
+        { id: "finalizing", name: "finalizing.pdf", status: "finalizing", updatedAt: 1000 },
+        { id: "ingesting", name: "ingesting.pdf", status: "ingesting", updatedAt: 1000 }
       ],
       2000
     );
 
-    expect(restored.map((item) => item.status)).toEqual(["interrupted", "interrupted", "interrupted"]);
-    expect(restored.every((item) => item.error?.includes("Please select it again"))).toBe(true);
+    expect(restored.map((item) => item.status)).toEqual(["interrupted", "checking", "checking", "checking"]);
+    expect(restored[0]?.error).toContain("Please select it again");
+    expect(restored.slice(1).every((item) => item.message?.includes("checking the document list below"))).toBe(true);
   });
 
   it("reconciles restored selected-only metadata to a ready server document by exact title", () => {
@@ -222,9 +226,22 @@ describe("multi-file upload helpers", () => {
     ).toBe("ingesting");
   });
 
-  it("keeps restored selected-only metadata interrupted when no server document matches", () => {
+  it("keeps restored in-flight metadata checking when no server document matches during grace period", () => {
     const restored = restorePersistedUploadItems(
       [{ id: "item-1", name: "missing.pdf", status: "uploading", updatedAt: 1000 }],
+      2000,
+      [{ id: "doc-1", title: "other.pdf", status: "READY", createdAt: "2026-05-04T10:00:00.000Z" }]
+    );
+
+    expect(restored[0]).toMatchObject({
+      status: "checking",
+      error: undefined
+    });
+  });
+
+  it("lets waiting metadata without a document match become interrupted", () => {
+    const restored = restorePersistedUploadItems(
+      [{ id: "item-1", name: "missing.pdf", status: "waiting", updatedAt: 1000 }],
       2000,
       [{ id: "doc-1", title: "other.pdf", status: "READY", createdAt: "2026-05-04T10:00:00.000Z" }]
     );
@@ -233,6 +250,58 @@ describe("multi-file upload helpers", () => {
       status: "interrupted",
       error: "This file was not uploaded before you left this page. Please select it again."
     });
+  });
+
+  it("marks checking metadata interrupted after the reconciliation grace period", () => {
+    const restored = restorePersistedUploadItems(
+      [
+        {
+          id: "item-1",
+          name: "missing.pdf",
+          status: "checking",
+          updatedAt: 1000,
+          checkingStartedAt: 2000
+        }
+      ],
+      2000 + UPLOAD_RECONCILE_GRACE_MS,
+      [{ id: "doc-1", title: "other.pdf", status: "READY", createdAt: "2026-05-04T10:00:00.000Z" }]
+    );
+
+    expect(restored[0]).toMatchObject({
+      status: "interrupted",
+      error: "This file was not uploaded before you left this page. Please select it again."
+    });
+  });
+
+  it("reconciles checking items to ready when the document list later returns a match", () => {
+    const reconciled = reconcileUploadItemsWithDocuments(
+      [{ id: "item-1", name: "notes.pdf", status: "checking", checkingStartedAt: 1000 }],
+      [{ id: "doc-1", title: "notes.pdf", status: "READY", createdAt: "2026-05-04T10:00:00.000Z" }],
+      2000
+    );
+
+    expect(reconciled[0]).toMatchObject({
+      id: "item-1",
+      name: "notes.pdf",
+      status: "ready",
+      documentId: "doc-1"
+    });
+  });
+
+  it("reconciles checking items to ingesting when the document list later returns processing states", () => {
+    const processing = reconcileUploadItemsWithDocuments(
+      [{ id: "item-1", name: "notes.pdf", status: "checking", checkingStartedAt: 1000 }],
+      [{ id: "doc-1", title: "notes.pdf", status: "PROCESSING", createdAt: "2026-05-04T10:00:00.000Z" }],
+      2000
+    );
+    const queued = reconcileUploadItemsWithDocuments(
+      [{ id: "item-2", name: "queued.pdf", status: "checking", checkingStartedAt: 1000 }],
+      [{ id: "doc-2", title: "queued.pdf", status: "QUEUED", createdAt: "2026-05-04T10:00:00.000Z" }],
+      2000
+    );
+
+    expect(processing[0]).toMatchObject({ status: "ingesting", documentId: "doc-1" });
+    expect(queued[0]).toMatchObject({ status: "ingesting", documentId: "doc-2" });
   });
 
   it("prefers the newest exact title match without fuzzy matching", () => {

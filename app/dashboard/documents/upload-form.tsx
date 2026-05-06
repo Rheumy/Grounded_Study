@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 
 type UploadStatus =
   | "waiting"
+  | "checking"
   | "uploading"
   | "finalizing"
   | "ingesting"
@@ -22,6 +23,7 @@ type UploadItem = {
   documentId?: string;
   error?: string;
   message?: string;
+  checkingStartedAt?: number;
 };
 
 export type PersistedUploadItem = {
@@ -31,6 +33,7 @@ export type PersistedUploadItem = {
   documentId?: string;
   error?: string;
   updatedAt: number;
+  checkingStartedAt?: number;
 };
 
 type DocumentStatusForUpload = {
@@ -42,8 +45,11 @@ type DocumentStatusForUpload = {
 
 export const RECENT_UPLOAD_BATCH_STORAGE_KEY = "grounded-study:recent-upload-batch:v1";
 const RECENT_UPLOAD_STALE_MS = 2 * 60 * 60 * 1000;
+export const UPLOAD_RECONCILE_GRACE_MS = 45 * 1000;
 const INTERRUPTED_UPLOAD_MESSAGE = "This file was not uploaded before you left this page. Please select it again.";
 const RECONCILED_UPLOAD_MESSAGE = "This document was uploaded and is shown below.";
+const CHECKING_UPLOAD_MESSAGE =
+  "This document may still be uploading or processing. We are checking the document list below.";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -72,6 +78,7 @@ const questionMixOptions: { value: QuestionMix; label: string }[] = [
 
 const statusLabels: Record<UploadStatus, string> = {
   waiting: "Waiting",
+  checking: "Checking upload status…",
   uploading: "Uploading",
   finalizing: "Uploading",
   ingesting: "Processing",
@@ -102,7 +109,7 @@ export function getUploadSummary(items: Array<Pick<UploadItem, "status">>) {
   for (const item of items) {
     if (item.status === "waiting") counts.waiting += 1;
     if (item.status === "uploading" || item.status === "finalizing") counts.uploading += 1;
-    if (item.status === "ingesting") counts.processing += 1;
+    if (item.status === "checking" || item.status === "ingesting") counts.processing += 1;
     if (item.status === "ready") counts.ready += 1;
     if (item.status === "failed") counts.failed += 1;
     if (item.status === "interrupted") counts.interrupted += 1;
@@ -112,7 +119,7 @@ export function getUploadSummary(items: Array<Pick<UploadItem, "status">>) {
 }
 
 export function toPersistedUploadItems(
-  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error">>,
+  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error" | "checkingStartedAt">>,
   now = Date.now()
 ): PersistedUploadItem[] {
   return items.map((item) => ({
@@ -121,7 +128,8 @@ export function toPersistedUploadItems(
     status: item.status,
     documentId: item.documentId,
     error: item.error,
-    updatedAt: now
+    updatedAt: now,
+    checkingStartedAt: item.checkingStartedAt
   }));
 }
 
@@ -132,7 +140,7 @@ export function restorePersistedUploadItems(
 ): UploadItem[] {
   return items
     .filter((item) => now - item.updatedAt <= RECENT_UPLOAD_STALE_MS)
-    .map((item) => reconcilePersistedUploadItem(item, documents));
+    .map((item) => reconcilePersistedUploadItem(item, documents, now));
 }
 
 function mapDocumentStatusToUploadStatus(status: string): UploadStatus {
@@ -149,7 +157,7 @@ function getDocumentCreatedAtMs(document: DocumentStatusForUpload) {
 }
 
 export function findRestoredUploadDocumentMatch(
-  item: PersistedUploadItem,
+  item: { name: string; documentId?: string; [key: string]: unknown },
   documents: DocumentStatusForUpload[]
 ) {
   if (item.documentId) {
@@ -168,7 +176,8 @@ export function findRestoredUploadDocumentMatch(
 
 export function reconcilePersistedUploadItem(
   item: PersistedUploadItem,
-  documents: DocumentStatusForUpload[]
+  documents: DocumentStatusForUpload[],
+  now = Date.now()
 ): UploadItem {
   const matchingDocument = findRestoredUploadDocumentMatch(item, documents);
 
@@ -186,22 +195,82 @@ export function reconcilePersistedUploadItem(
     };
   }
 
-  const wasSelectedOnly =
+  if (!item.documentId && item.status === "waiting") {
+    return {
+      id: item.id,
+      name: item.name,
+      status: "interrupted",
+      documentId: item.documentId,
+      error: INTERRUPTED_UPLOAD_MESSAGE
+    };
+  }
+
+  const shouldCheck =
     !item.documentId &&
-    (item.status === "waiting" || item.status === "uploading" || item.status === "finalizing");
+    (item.status === "uploading" ||
+      item.status === "finalizing" ||
+      item.status === "ingesting" ||
+      item.status === "checking");
+
+  if (shouldCheck) {
+    const checkingStartedAt = item.checkingStartedAt ?? now;
+    if (now - checkingStartedAt >= UPLOAD_RECONCILE_GRACE_MS) {
+      return {
+        id: item.id,
+        name: item.name,
+        status: "interrupted",
+        documentId: item.documentId,
+        error: INTERRUPTED_UPLOAD_MESSAGE
+      };
+    }
+
+    return {
+      id: item.id,
+      name: item.name,
+      status: "checking",
+      documentId: item.documentId,
+      error: undefined,
+      message: CHECKING_UPLOAD_MESSAGE,
+      checkingStartedAt
+    };
+  }
 
   return {
     id: item.id,
     name: item.name,
-    status: wasSelectedOnly ? "interrupted" : item.status,
+    status: item.status,
     documentId: item.documentId,
-    error: wasSelectedOnly ? INTERRUPTED_UPLOAD_MESSAGE : item.error
+    error: item.error,
+    ...(item.checkingStartedAt !== undefined ? { checkingStartedAt: item.checkingStartedAt } : {})
   };
+}
+
+export function reconcileUploadItemsWithDocuments(
+  items: UploadItem[],
+  documents: DocumentStatusForUpload[],
+  now = Date.now()
+): UploadItem[] {
+  return items.map((item) =>
+    item.status === "checking" && !item.documentId
+      ? reconcilePersistedUploadItem(
+          {
+            id: item.id,
+            name: item.name,
+            status: item.status,
+            error: item.error,
+            updatedAt: now,
+            checkingStartedAt: item.checkingStartedAt
+          },
+          documents,
+          now
+        )
+      : item
+  );
 }
 
 export function writePersistedUploadItems(
   storage: Pick<Storage, "setItem">,
-  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error">>,
+  items: Array<Pick<UploadItem, "id" | "name" | "status" | "documentId" | "error" | "checkingStartedAt">>,
   now = Date.now()
 ) {
   storage.setItem(RECENT_UPLOAD_BATCH_STORAGE_KEY, JSON.stringify(toPersistedUploadItems(items, now)));
@@ -353,14 +422,55 @@ export function UploadForm({
 
     const hasInterruptedItems = restoredItems.some((item) => item.status === "interrupted");
     const hasDocumentBackedItems = restoredItems.some((item) => Boolean(item.documentId));
+    const hasCheckingItems = restoredItems.some((item) => item.status === "checking");
     if (hasInterruptedItems) {
       setUploadStatus("Some selected files were not uploaded before you left this page. Please select them again.");
+      return;
+    }
+    if (hasCheckingItems) {
+      setUploadStatus("Checking upload status…");
       return;
     }
     if (hasDocumentBackedItems) {
       setUploadStatus("Recently uploaded documents continue processing below.");
     }
   }, [documents]);
+
+  useEffect(() => {
+    const hasCheckingItems = items.some((item) => item.status === "checking" && !item.documentId);
+    if (!hasCheckingItems || typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    async function reconcileFromServer() {
+      const response = await fetch("/api/documents", { cache: "no-store" }).catch(() => null);
+      if (cancelled || !response?.ok) return;
+
+      const body = await response.json().catch(() => null);
+      if (cancelled || !Array.isArray(body?.documents)) return;
+
+      setItems((prev) => {
+        const nextItems = reconcileUploadItemsWithDocuments(
+          prev,
+          body.documents as DocumentStatusForUpload[],
+          Date.now()
+        );
+        persistItems(nextItems);
+        return nextItems;
+      });
+      router.refresh();
+    }
+
+    void reconcileFromServer();
+    const interval = setInterval(() => {
+      void reconcileFromServer();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [items, router]);
 
   const readyDocumentIds = useMemo(
     () => getReadyUploadDocumentIds(items, documents),
