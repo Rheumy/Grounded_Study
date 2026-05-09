@@ -85,6 +85,22 @@ describe("verifier outsider test", () => {
   });
 
   it("does not auto-reject a concise source-specific true/false claim just because the topic is familiar", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "Supported",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "True"
+            })
+          }
+        }
+      ]
+    });
+
     const result = await verifyQuestion({
       question: {
         type: "TRUE_FALSE",
@@ -117,6 +133,63 @@ describe("verifier outsider test", () => {
     });
 
     expect(result.status).toBe("PASSED");
+  });
+
+  it("rejects a true/false item when the citation supports the opposite answer key", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "The cited evidence supports the statement as written.",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "True"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "In cases of suspected occult spinal dysraphism, MRI is the imaging modality of choice and is highly sensitive, even in infants younger than 5 months old.",
+        options: ["True", "False"],
+        answer: "False",
+        rationale:
+          "MRI is preferred and highly sensitive, while ultrasonographic evaluation is less sensitive than MRI in infants younger than 5 months, so the original statement is inaccurate.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "MRI is highly sensitive and represents the imaging modality of choice in patients of all ages when occult spinal dysraphism is suspected. Although the vertebrae are not yet completely ossified in infants < 5 months of age, ultrasonographic evaluation of the spinal cord is still less sensitive than MRI in this age group.",
+            page: 8
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "MRI is highly sensitive and represents the imaging modality of choice in patients of all ages when occult spinal dysraphism is suspected. Although the vertebrae are not yet completely ossified in infants < 5 months of age, ultrasonographic evaluation of the spinal cord is still less sensitive than MRI in this age group.",
+          page: 8
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "specialist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.reason).toContain("supports True, not the keyed answer False");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["UNSUPPORTED_ANSWER", "INVALID_TRUE_FALSE"])
+    );
   });
 
   it("does not auto-reject a familiar topic in generalist mode when the exact claim depends on a narrower source detail", async () => {

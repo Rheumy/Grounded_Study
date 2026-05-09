@@ -18,6 +18,7 @@ export type VerifierResult = {
   reason: string;
   failureCodes?: FailureCode[];
   confidence?: "HIGH" | "MEDIUM" | "LOW";
+  supportedAnswer?: "True" | "False" | null;
 };
 
 const ALLOWED_FAILURE_CODES = new Set<FailureCode>([
@@ -610,12 +611,55 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
     rawConfidence === "HIGH" || rawConfidence === "MEDIUM" || rawConfidence === "LOW"
       ? rawConfidence
       : undefined;
+  const rawSupportedAnswer = String(
+    obj.supportedAnswer ?? obj.supported_answer ?? obj.evidenceSupportedAnswer ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const supportedAnswer =
+    rawSupportedAnswer === "true"
+      ? "True"
+      : rawSupportedAnswer === "false"
+        ? "False"
+        : rawSupportedAnswer === "null" || rawSupportedAnswer === "unknown" || rawSupportedAnswer === ""
+          ? null
+          : null;
 
   return {
     status: isPass ? "PASSED" : "FAILED",
     reason,
     failureCodes,
-    confidence
+    confidence,
+    supportedAnswer
+  };
+}
+
+function enforceTrueFalseAnswerSupport(params: {
+  question: GeneratedQuestion;
+  result: VerifierResult;
+}): VerifierResult {
+  if (params.question.type !== "TRUE_FALSE" || params.result.status !== "PASSED") {
+    return params.result;
+  }
+
+  if (params.result.supportedAnswer === params.question.answer) {
+    return params.result;
+  }
+
+  const reason =
+    params.result.supportedAnswer === "True" || params.result.supportedAnswer === "False"
+      ? `Verifier found the cited evidence supports ${params.result.supportedAnswer}, not the keyed answer ${params.question.answer}`
+      : "Verifier did not identify a clear evidence-supported truth value for the true/false item";
+
+  return {
+    ...params.result,
+    status: "FAILED",
+    reason,
+    failureCodes: ensureFailureCodes(params.result.failureCodes ?? [], [
+      "UNSUPPORTED_ANSWER",
+      "INVALID_TRUE_FALSE"
+    ]),
+    confidence: params.result.confidence ?? "HIGH"
   };
 }
 
@@ -720,6 +764,7 @@ export async function verifyQuestion(params: {
     result = parsedResult.data;
   }
   result = assignOutsiderSignalCode(result);
+  result = enforceTrueFalseAnswerSupport({ question: params.question, result });
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
   const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
 

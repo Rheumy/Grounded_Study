@@ -331,13 +331,6 @@ export function ExamClient() {
           <p className="text-xs text-ink/55">
             Beta supports multiple choice and true/false. More types coming.
           </p>
-          <div className="rounded-2xl border border-accent/20 bg-accentSoft/40 p-4">
-            <p className="text-sm font-medium text-ink">Question type note</p>
-            <p className="mt-1 text-sm text-ink/65">
-              Historical short-answer reviews remain available, but new mock exams currently use the
-              supported objective question types only.
-            </p>
-          </div>
           <Button onClick={startExam} className="shadow-sm">Start mock exam</Button>
         </div>
       ) : (

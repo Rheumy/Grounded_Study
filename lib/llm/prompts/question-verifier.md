@@ -116,6 +116,9 @@ For TRUE_FALSE, fail if:
 - the statement relies on a simplistic absolute as an easy trap rather than a meaningful grounded distinction
 - advanced or exam-style rigor was requested, but the statement could be guessed without deep knowledge of the material
 - the truth value changes depending on omitted qualifiers, unstated assumptions, or missing context
+- the cited evidence supports the opposite truth value from the keyed answer
+- the rationale explains evidence that contradicts the keyed answer, even if its final sentence claims the key is correct
+- you cannot independently state whether the cited evidence supports `True` or `False`
 
 ### E. Citation fidelity
 Fail if:
@@ -162,6 +165,7 @@ Return a JSON object with exactly these fields:
 - `reason`: one concise sentence explaining the main verdict
 - `failureCodes`: array of zero or more codes from the list below
 - `confidence`: `"HIGH"`, `"MEDIUM"`, or `"LOW"`
+- `supportedAnswer`: for TRUE_FALSE only, the truth value directly supported by the cited evidence (`"True"` or `"False"`), or `null` if not clearly decidable; use `null` for non-TRUE_FALSE questions
 
 Allowed `failureCodes`:
 - `UNSUPPORTED_STEM`
@@ -184,6 +188,8 @@ Rules:
 - Prefer `MULTIPLE_POSSIBLE_ANSWERS` when a distractor is still reasonably defensible.
 - Prefer `UNSUPPORTED_ANSWER` when the keyed answer is not clearly stronger than the evidence.
 - Prefer `UNSUPPORTED_RATIONALE` when the explanation adds claims not supported by the citations.
+- For TRUE_FALSE, if `supportedAnswer` is the opposite of the keyed answer, status must be `"FAILED"` with `UNSUPPORTED_ANSWER` and `INVALID_TRUE_FALSE`.
+- For TRUE_FALSE, if `supportedAnswer` is `null`, status must be `"FAILED"` with `UNSUPPORTED_ANSWER` or `INVALID_TRUE_FALSE`.
 - Prefer `INVALID_TRUE_FALSE` when the truth value depends on omitted qualifiers or missing context.
 - Prefer `AMBIGUOUS_QUESTION` when the stem or proposition can be read in more than one defensible way.
 - Keep `reason` brief, readable, and specific.

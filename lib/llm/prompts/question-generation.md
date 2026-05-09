@@ -352,6 +352,8 @@ Rules:
 - reject statements whose truth value depends on missing context, omitted qualifiers, or unstated assumptions
 - do not use document-structure statements or metadata statements as the proposition being tested
 - the truth value must depend on a source-specific distinction, not a field-general truth
+- the cited evidence must directly support the exact keyed truth value; do not key a statement as false when the citation supports the statement as written
+- the rationale must explain why the keyed truth value follows from the citation, not argue toward the opposite conclusion
 - broad summary statements, definitional truths, and headline-level propositions must be rejected even when technically grounded
 - if the configured outsider could answer this exact statement correctly without the specific cited detail, return `INSUFFICIENT_EVIDENCE`
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements

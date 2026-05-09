@@ -21,7 +21,8 @@ export const VerifierSchema = z.object({
   status: z.enum(["PASSED", "FAILED"]),
   reason: z.string().min(3),
   failureCodes: z.array(FailureCodeSchema).optional(),
-  confidence: z.enum(["HIGH", "MEDIUM", "LOW"]).optional()
+  confidence: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
+  supportedAnswer: z.enum(["True", "False"]).nullable().optional()
 });
 
 export type FailureCode = z.infer<typeof FailureCodeSchema>;

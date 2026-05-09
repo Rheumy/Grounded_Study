@@ -71,25 +71,6 @@ export default async function DashboardPage() {
         <p className="mt-5 text-sm text-ink/50">Signed in as {session?.user?.email}</p>
       </div>
 
-      <div className="grid gap-3 rounded-2xl border border-ink/10 bg-ink/[0.02] p-5 text-sm text-ink/75 md:grid-cols-2 xl:grid-cols-4">
-        <div>
-          <p className="font-medium text-ink">Step 1</p>
-          <p className="mt-1">Upload study material</p>
-        </div>
-        <div>
-          <p className="font-medium text-ink">Step 2</p>
-          <p className="mt-1">Generate your question bank</p>
-        </div>
-        <div>
-          <p className="font-medium text-ink">Step 3</p>
-          <p className="mt-1">Practise with focused sessions</p>
-        </div>
-        <div>
-          <p className="font-medium text-ink">Step 4</p>
-          <p className="mt-1">Practise or sit a mock exam</p>
-        </div>
-      </div>
-
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {dashboardCards.map((card) => (
           <Link key={card.href} href={card.href} className="group">

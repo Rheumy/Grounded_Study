@@ -10,6 +10,7 @@ import {
   normalizeCitationRecords,
   sanitizeFeedbackText
 } from "@/lib/feedback/user-facing";
+import { objectiveAnswersMatch } from "@/lib/questions/objective-answer";
 
 export async function POST(request: Request) {
   const user = await requireUserApi();
@@ -38,7 +39,11 @@ export async function POST(request: Request) {
   const citations = normalizeCitationRecords(question.citationsJson);
 
   if (question.type === "MCQ" || question.type === "TRUE_FALSE") {
-    correct = selectedAnswer === question.answer;
+    correct = objectiveAnswersMatch({
+      selectedAnswer,
+      storedAnswer: question.answer,
+      questionType: question.type
+    });
   } else {
     try {
       const grade = await gradeShortAnswer({
