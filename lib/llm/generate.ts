@@ -843,7 +843,7 @@ export async function generateQuestions(params: {
           difficulty: generated.difficulty,
           type: generated.type,
           stem: sanitizeFeedbackText(generated.stem),
-          optionsJson: generated.options ?? undefined,
+          optionsJson: generated.options?.map((option) => sanitizeFeedbackText(option)) ?? undefined,
           answer: sanitizeFeedbackText(generated.answer),
           rationale: sanitizeFeedbackText(generated.rationale),
           citationsJson: generated.citations,

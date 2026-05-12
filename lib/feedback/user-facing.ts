@@ -18,9 +18,22 @@ function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function capitalizeLeadingLetter(value: string): string {
+  return value.replace(/^([a-z])/, (letter) => letter.toUpperCase());
+}
+
 export function sanitizeFeedbackText(value: string | null | undefined): string {
-  return collapseWhitespace(
+  return capitalizeLeadingLetter(collapseWhitespace(
     String(value ?? "")
+      .replace(/\baccording to (?:the )?(?:evidence|material|source) provided,?\s*/gi, "")
+      .replace(/\baccording to (?:the )?provided (?:evidence|material|source),?\s*/gi, "")
+      .replace(/\bbased on (?:the )?(?:evidence|material|source) provided,?\s*/gi, "")
+      .replace(/\bbased on (?:the )?provided (?:evidence|material|source),?\s*/gi, "")
+      .replace(/\bbased on (?:the )?source,?\s*/gi, "")
+      .replace(/\bthe evidence (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?) that\s*/gi, "")
+      .replace(/\bthe evidence (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?)\s*/gi, "")
+      .replace(/\bthe material (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?) that\s*/gi, "")
+      .replace(/\bthe material (?:mentions?|states?|indicates?|shows?|describes?|explains?|notes?)\s*/gi, "")
       .replace(/\bas supported by the cited material,?\s*/gi, "")
       .replace(/\baccording to the cited material,?\s*/gi, "")
       .replace(/\bbased on the cited material,?\s*/gi, "")
@@ -45,7 +58,8 @@ export function sanitizeFeedbackText(value: string | null | undefined): string {
       .replace(/\bChunk\s+[A-Za-z0-9_-]+(?:\s*\(page\s*[^)]*\))?:?\s*/gi, "")
       .replace(/\bchunkId\s*[:=]\s*[A-Za-z0-9_-]+\b/gi, "")
       .replace(/\bExcerpts?:\s*/gi, "")
-  );
+      .replace(/\s+([.,;:!?])/g, "$1")
+  ));
 }
 
 export function normalizeCitationRecords(input: unknown): CitationRecord[] {

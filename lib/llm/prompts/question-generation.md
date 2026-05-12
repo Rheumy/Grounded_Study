@@ -219,7 +219,13 @@ Do NOT write phrases such as:
 - in the excerpt
 - in the excerpts
 - according to the excerpt
+- according to the evidence provided
+- according to the material provided
 - according to the source chunk
+- based on the provided evidence
+- based on the source
+- the evidence states
+- the material states
 - the passage states
 - the retrieved text says
 - from the provided chunks
