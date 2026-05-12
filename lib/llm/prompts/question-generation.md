@@ -347,6 +347,8 @@ Rules:
 - the stem must be a declarative statement
 - avoid trivial negation traps
 - avoid statements that are technically ambiguous
+- do not copy, lightly paraphrase, or simply negate a source sentence as the stem
+- the statement must test an implication, exception, contrast, qualifier, consequence, timing condition, limitation, or applied distinction supported by the source rather than directly restating one source sentence
 - balance truth values across a session. Do not default to true propositions. A well-crafted false statement should be just as learning-valuable as a true one. If the source material lends itself naturally to a true statement, consider whether a false statement involving a clear grounded distinction, exception, incorrect mechanism, wrong timing, or wrong qualifier would be equally educational
 - only use TRUE_FALSE when the source supports a clearly decidable statement
 - reject statements whose truth value depends on missing context, omitted qualifiers, or unstated assumptions
@@ -355,6 +357,7 @@ Rules:
 - the cited evidence must directly support the exact keyed truth value; do not key a statement as false when the citation supports the statement as written
 - the rationale must explain why the keyed truth value follows from the citation, not argue toward the opposite conclusion
 - broad summary statements, definitional truths, and headline-level propositions must be rejected even when technically grounded
+- near-verbatim source restatements must be rejected even when technically grounded and citation-supported
 - if the configured outsider could answer this exact statement correctly without the specific cited detail, return `INSUFFICIENT_EVIDENCE`
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
 - when higher-rigor or exam-style questions are requested, prefer statements whose truth value depends on a qualifier, mechanism, exception, timing detail, context, management caveat, or overlapping feature that is clearly grounded

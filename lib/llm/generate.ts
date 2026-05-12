@@ -762,8 +762,20 @@ export async function generateQuestions(params: {
               ownerId: params.ownerId,
               questionType,
               attempt: attempt + 1,
+              failureCodes: verifier.failureCodes,
               reason: verifier.reason,
-              assumedBackgroundLevel
+              assumedBackgroundLevel,
+              lowEducationalValueBucket: /near-copy|source wording|verbatim|restatement|copied/i.test(
+                verifier.reason
+              )
+                ? "near_copy_or_restatement"
+                : /headline|summary|broad|field[- ]general|background|without reading|without studying/i.test(
+                      verifier.reason
+                    )
+                  ? "outsider_or_broad_summary"
+                  : /telegraph|guess|wording/i.test(verifier.reason)
+                    ? "telegraphed_or_guessable"
+                    : "other"
             },
             "Verifier rejected low-educational-value question"
           );

@@ -84,6 +84,180 @@ describe("verifier outsider test", () => {
     );
   });
 
+  it("rejects copied true/false stems before LLM review", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The cited material distinguishes the seed-region requirement from tolerated distal mismatches.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 2,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+    );
+    expect(result.reason).toContain("too close to the cited source wording");
+    expect(createCompletion).not.toHaveBeenCalled();
+  });
+
+  it("allows implication-based true/false stems that depend on a cited distinction", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "Supported",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "True"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Because the PAM-proximal seed match was the required feature, errors farther from the PAM did not automatically prevent cleavage.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The evidence makes seed-region complementarity near the PAM the required feature while noting that some distal guide mismatches were tolerated.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
+  it("does not over-reject MCQ stems that share source terminology without copying a sentence", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem:
+          "Which cleavage requirement best explains why distal guide mismatches were tolerated in the described system?",
+        options: [
+          "Seed-region complementarity near the PAM was preserved",
+          "PAM recognition became unnecessary after guide binding",
+          "Full-length guide matching was required in every position",
+          "The system targeted RNA rather than DNA"
+        ],
+        answer: "Seed-region complementarity near the PAM was preserved",
+        rationale:
+          "The source identifies seed-region complementarity near the PAM as required while noting that distal guide mismatches could be tolerated.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
+  it("does not over-reject short-answer stems that ask for explanation from source terms", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "SHORT_ANSWER",
+        stem:
+          "Explain how the source distinguishes seed-region complementarity from distal guide mismatches.",
+        answer:
+          "Seed-region complementarity near the PAM was required for efficient cleavage, while some distal guide mismatches were tolerated.",
+        rationale:
+          "The answer captures the source's contrast between a required seed-region feature and tolerated distal mismatches.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
   it("does not auto-reject a concise source-specific true/false claim just because the topic is familiar", async () => {
     createCompletion.mockResolvedValueOnce({
       choices: [
@@ -156,7 +330,7 @@ describe("verifier outsider test", () => {
       question: {
         type: "TRUE_FALSE",
         stem:
-          "In cases of suspected occult spinal dysraphism, MRI is the imaging modality of choice and is highly sensitive, even in infants younger than 5 months old.",
+          "MRI remains the preferred and more sensitive imaging test for suspected occult spinal dysraphism even before 5 months of age.",
         options: ["True", "False"],
         answer: "False",
         rationale:

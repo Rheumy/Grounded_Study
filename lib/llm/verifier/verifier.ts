@@ -105,6 +105,155 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length >= 4);
 }
 
+const NEAR_COPY_STOPWORDS = new Set([
+  "about",
+  "above",
+  "after",
+  "also",
+  "although",
+  "because",
+  "been",
+  "being",
+  "between",
+  "both",
+  "could",
+  "does",
+  "during",
+  "from",
+  "have",
+  "into",
+  "more",
+  "most",
+  "only",
+  "other",
+  "over",
+  "same",
+  "should",
+  "such",
+  "than",
+  "that",
+  "their",
+  "there",
+  "these",
+  "this",
+  "those",
+  "through",
+  "under",
+  "when",
+  "where",
+  "which",
+  "while",
+  "with",
+  "within",
+  "without",
+  "would"
+]);
+
+function tokenizeForNearCopy(value: string): string[] {
+  return tokenize(value).filter((token) => !NEAR_COPY_STOPWORDS.has(token));
+}
+
+function splitSentences(value: string): string[] {
+  return normalizeSpace(value)
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function lexicalOverlapRatio(a: string, b: string): number {
+  const left = new Set(tokenizeForNearCopy(a));
+  if (left.size === 0) {
+    return 0;
+  }
+
+  const right = new Set(tokenizeForNearCopy(b));
+  let overlap = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / left.size;
+}
+
+function longestCommonTokenRun(a: string, b: string): number {
+  const left = tokenizeForNearCopy(a);
+  const right = tokenizeForNearCopy(b);
+  let best = 0;
+
+  for (let i = 0; i < left.length; i += 1) {
+    for (let j = 0; j < right.length; j += 1) {
+      let run = 0;
+      while (left[i + run] && left[i + run] === right[j + run]) {
+        run += 1;
+      }
+      best = Math.max(best, run);
+    }
+  }
+
+  return best;
+}
+
+function hasTrueFalseTransformSignal(value: string): boolean {
+  return /\b(?:because|but|could|despite|except|if|implies|in contrast|only if|provided|rather than|so that|therefore|unless|whereas|while)\b/.test(
+    value.toLowerCase()
+  );
+}
+
+function findNearCopyEducationalFailure(params: {
+  question: GeneratedQuestion;
+  chunks: { id: string; content: string; page: number | null }[];
+}): VerifierResult | null {
+  const stemTokens = tokenizeForNearCopy(params.question.stem);
+  if (stemTokens.length < 6) {
+    return null;
+  }
+
+  const chunkById = new Map(params.chunks.map((chunk) => [chunk.id, chunk]));
+  const citedTexts = params.question.citations.flatMap((citation) => {
+    const chunk = chunkById.get(citation.chunkId);
+    return [citation.excerpt, ...(chunk ? splitSentences(chunk.content) : [])].filter(Boolean);
+  });
+
+  for (const sourceText of citedTexts) {
+    const sourceTokens = tokenizeForNearCopy(sourceText);
+    if (sourceTokens.length < 6) {
+      continue;
+    }
+
+    const overlap = lexicalOverlapRatio(params.question.stem, sourceText);
+    const commonRun = longestCommonTokenRun(params.question.stem, sourceText);
+    const similarLength =
+      Math.abs(stemTokens.length - sourceTokens.length) / Math.max(stemTokens.length, sourceTokens.length);
+    const nearSentenceCopy = overlap >= 0.82 && similarLength <= 0.35;
+    const copiedPhrase = commonRun >= 8 && overlap >= 0.72;
+    const trueFalseRestatement =
+      params.question.type === "TRUE_FALSE" &&
+      overlap >= 0.82 &&
+      commonRun >= 5 &&
+      similarLength <= 0.5 &&
+      !hasTrueFalseTransformSignal(params.question.stem);
+
+    if (nearSentenceCopy || copiedPhrase || trueFalseRestatement) {
+      return {
+        status: "FAILED",
+        reason:
+          params.question.type === "TRUE_FALSE"
+            ? "True/false stem is too close to the cited source wording to be educationally useful"
+            : "Question stem is too close to the cited source wording to be educationally useful",
+        failureCodes:
+          params.question.type === "TRUE_FALSE"
+            ? ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+            : ["LOW_EDUCATIONAL_VALUE"],
+        confidence: "HIGH"
+      };
+    }
+  }
+
+  return null;
+}
+
 function hasReasoningSignal(value: string): boolean {
   return /\b(?:because|best explains|best describes|compared with|comparison|difference|distinguish|exception|how|implication|interpret|management|mechanism|most appropriate|most likely|next step|qualifier|reason|therefore|timing|underlying|versus|why)\b/.test(
     value
@@ -663,6 +812,37 @@ function enforceTrueFalseAnswerSupport(params: {
   };
 }
 
+function enforceTrueFalseEducationalHardFailures(params: {
+  question: GeneratedQuestion;
+  result: VerifierResult;
+}): VerifierResult {
+  if (params.question.type !== "TRUE_FALSE" || params.result.status !== "FAILED") {
+    return params.result;
+  }
+
+  const reason = params.result.reason.toLowerCase();
+  const failureCodes = params.result.failureCodes ?? [];
+  const hasLowValueSignal =
+    failureCodes.includes("LOW_EDUCATIONAL_VALUE") ||
+    failureCodes.includes("OUTSIDER_SOLVABLE") ||
+    /broad|field[- ]general|guess|headline|summary|telegraph|without (?:reading|studying)|wording/.test(
+      reason
+    );
+
+  if (!hasLowValueSignal) {
+    return params.result;
+  }
+
+  return {
+    ...params.result,
+    failureCodes: ensureFailureCodes(failureCodes, [
+      "LOW_EDUCATIONAL_VALUE",
+      "INVALID_TRUE_FALSE"
+    ]),
+    confidence: params.result.confidence ?? "MEDIUM"
+  };
+}
+
 export async function verifyQuestion(params: {
   question: GeneratedQuestion;
   chunks: { id: string; content: string; page: number | null }[];
@@ -686,6 +866,21 @@ export async function verifyQuestion(params: {
       "Verifier rejected question before LLM review"
     );
     return citationFailure;
+  }
+
+  const nearCopyFailure = findNearCopyEducationalFailure(params);
+  if (nearCopyFailure) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: nearCopyFailure.failureCodes ?? [],
+        reason: nearCopyFailure.reason,
+        questionId: params.questionId ?? null,
+        userId: params.userId ?? null
+      },
+      "Verifier rejected near-copy low-educational-value question before LLM review"
+    );
+    return nearCopyFailure;
   }
 
   const chunkMap = params.chunks
@@ -765,6 +960,7 @@ export async function verifyQuestion(params: {
   }
   result = assignOutsiderSignalCode(result);
   result = enforceTrueFalseAnswerSupport({ question: params.question, result });
+  result = enforceTrueFalseEducationalHardFailures({ question: params.question, result });
   const highRigorRequested = styleRequestsHighRigor(params.styleProfile);
   const assumedBackgroundLevel = getAssumedBackgroundLevel(params.styleProfile);
 
@@ -825,6 +1021,7 @@ export async function verifyQuestion(params: {
       ),
       confidence: result.confidence ?? outsiderHeuristicFailure.confidence ?? "MEDIUM"
     };
+    result = enforceTrueFalseEducationalHardFailures({ question: params.question, result });
   }
 
   if (highRigorRequested && looksLowDepthForHighRigor(params.question)) {
@@ -843,6 +1040,7 @@ export async function verifyQuestion(params: {
       failureCodes: ensureFailureCodes(result.failureCodes ?? [], extraFailureCodes),
       confidence: result.confidence ?? "MEDIUM"
     };
+    result = enforceTrueFalseEducationalHardFailures({ question: params.question, result });
   }
 
   if (result.status === "FAILED" && hasOutsiderSignal(result)) {

@@ -111,8 +111,10 @@ For SHORT_ANSWER, fail if:
 ### D2. True/False discrimination
 For TRUE_FALSE, fail if:
 - the statement is a broad textbook-summary claim rather than a discriminative grounded proposition
+- the statement is a near-verbatim restatement, light paraphrase, or direct negation of a source sentence
 - the statement is still answerable from background knowledge without the specific cited detail being tested
 - the truth value is obvious from giveaway wording
+- the answer can be guessed from the wording rather than requiring the learner to use a source-specific distinction
 - the statement relies on a simplistic absolute as an easy trap rather than a meaningful grounded distinction
 - advanced or exam-style rigor was requested, but the statement could be guessed without deep knowledge of the material
 - the truth value changes depending on omitted qualifiers, unstated assumptions, or missing context
@@ -141,6 +143,7 @@ Fail if:
 - a higher-rigor or exam-style request was provided, but the question is still a clearly low-discrimination item such as a bare true/false statement, obvious recall, or one-line fact regurgitation
 - the question is topic-relevant but still reads like a black-and-white textbook summary rather than an exam-discriminative item for the requested level
 - the stem itself gives away the answer instead of requiring grounded reasoning or precise distinction
+- the stem mostly copies or lightly rewrites a cited source sentence instead of testing an implication, exception, contrast, qualifier, consequence, or applied distinction
 - the question overstates the source or makes an unsupported comparative claim such as more effective, more specific, more severe, earlier, safer, better, worse, or preferred when the cited evidence does not clearly support that comparison
 
 Always reject questions based mainly on:
