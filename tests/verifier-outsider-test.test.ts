@@ -179,6 +179,136 @@ describe("verifier outsider test", () => {
     expect(result.status).toBe("PASSED");
   });
 
+  it("rejects generic non-observation adverse-effect negation traps at difficulty 5", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "A study that does not observe an adverse effect necessarily means the medication does not cause the adverse effect in question.",
+        options: ["True", "False"],
+        answer: "False",
+        rationale:
+          "A non-observed adverse effect does not by itself prove the medication cannot cause that effect.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "the study did not detect a statistically significant increase in adverse events",
+            page: 2
+          }
+        ],
+        difficulty: 5,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "In this cohort, the study did not detect a statistically significant increase in adverse events, but the authors noted that rare effects could not be excluded.",
+          page: 2
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "specialist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+    );
+    expect(createCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects broad obvious true/false items at difficulty 5", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem: "Medications can cause adverse drug reactions.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The source discusses adverse drug reactions occurring during medication use.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "Adverse drug reactions may occur during medication use",
+            page: 3
+          }
+        ],
+        difficulty: 5,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Adverse drug reactions may occur during medication use and require monitoring in higher-risk patients.",
+          page: 3
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+    );
+  });
+
+  it("allows grounded true/false items at difficulty 2 when they depend on source detail", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "Supported",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "True"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "The studied cohort showed a 12-week relapse difference favoring IL-23 blockade over placebo.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The cited material reports a relapse reduction within 12 weeks compared with placebo.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "IL-23 blockade reduced relapse within 12 weeks compared with placebo",
+            page: 4
+          }
+        ],
+        difficulty: 2,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "IL-23 blockade reduced relapse within 12 weeks compared with placebo in the studied cohort.",
+          page: 4
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
   it("does not over-reject MCQ stems that share source terminology without copying a sentence", async () => {
     const result = await verifyQuestion({
       question: {

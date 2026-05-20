@@ -29,9 +29,12 @@ vi.mock("@/lib/retrieval/retrieve", () => ({
   getNonEducationalChunkReason: vi.fn(() => null)
 }));
 
-vi.mock("@/lib/feedback/user-facing", () => ({
-  sanitizeFeedbackText: (value: string) => value
-}));
+vi.mock("@/lib/feedback/user-facing", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/feedback/user-facing")>(
+    "@/lib/feedback/user-facing"
+  );
+  return actual;
+});
 
 vi.mock("@/lib/observability/logger", () => ({
   logger: {
@@ -242,6 +245,46 @@ describe("generation retries", () => {
           questionId: "question-1"
         }
       ]
+    });
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("sanitizes learner-facing evidence framing before storing a generated question", async () => {
+    (retrieveChunks as any).mockResolvedValue([chunkA]);
+    (generateQuestion as any).mockResolvedValue(
+      buildGeneratedQuestion("chunk-a", {
+        type: "TRUE_FALSE",
+        stem:
+          "According to the data provided on alkaptonuria management, oral administration of nitisinone completely reverses urinary HGA excretion.",
+        options: [
+          "True according to the evidence provided",
+          "False based on the provided evidence"
+        ],
+        answer: "True according to the evidence provided",
+        rationale:
+          "The data provided shows that oral nitisinone completely reverses urinary HGA excretion.",
+        citations: [{ chunkId: "chunk-a", excerpt: "Evidence A", page: 1 }]
+      })
+    );
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 2,
+      count: 1,
+      typeMix: { TRUE_FALSE: 1 }
+    });
+
+    expect(prisma.question.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        stem:
+          "Oral administration of nitisinone completely reverses urinary HGA excretion.",
+        optionsJson: ["True", "False"],
+        answer: "True",
+        rationale: "Oral nitisinone completely reverses urinary HGA excretion."
+      })
     });
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });

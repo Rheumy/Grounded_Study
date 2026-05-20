@@ -34,7 +34,7 @@ If the style profile omits this field, assume `generalist`.
 
 Domain-agnostic pattern examples:
 - Medicine REJECT: "Chemical peels can treat acne scarring. T/F"
-- Medicine ACCEPT: "According to the source, medium-depth TCA peels produce more durable improvement in ice-pick scars than superficial glycolic peels at the concentrations described. T/F"
+- Medicine ACCEPT: "At the concentrations described, medium-depth TCA peels produce more durable improvement in ice-pick scars than superficial glycolic peels. T/F"
 - Accounting REJECT: "Depreciation reduces an asset's book value. T/F"
 - Accounting ACCEPT: "Under the policy described in the source, a fully depreciated asset retained in service must still appear on the balance sheet at its residual value. T/F"
 - Engineering REJECT: "Increasing beam depth increases bending stiffness. T/F"
@@ -121,6 +121,14 @@ For TRUE_FALSE, fail if:
 - the cited evidence supports the opposite truth value from the keyed answer
 - the rationale explains evidence that contradicts the keyed answer, even if its final sentence claims the key is correct
 - you cannot independently state whether the cited evidence supports `True` or `False`
+
+For TRUE_FALSE at difficulty 4 or 5, fail unless the proposition depends on a meaningful grounded qualifier, exception, mechanism, caveat, timing detail, condition, comparison, or distinction.
+Difficulty 4-5 TRUE_FALSE must be subtle and exam-like, not a broad summary, obvious negation trap, or common-sense statement.
+Use `LOW_EDUCATIONAL_VALUE` and/or `INVALID_TRUE_FALSE` for these failures.
+Examples that should fail at difficulty 4-5:
+- "A study that does not observe an adverse effect necessarily means the medication does not cause the adverse effect in question."
+- "Patients taking a medication can experience adverse effects."
+- "X is associated with Y" when the item does not turn on a narrower grounded caveat or distinction.
 
 ### E. Citation fidelity
 Fail if:

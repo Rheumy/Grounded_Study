@@ -621,6 +621,82 @@ function looksLikeLowDepthTrueFalse(question: GeneratedQuestion): boolean {
   );
 }
 
+function hasMeaningfulTrueFalseDiscriminator(value: string): boolean {
+  return (
+    hasSpecificitySignal(value) ||
+    hasNuanceSignal(value) ||
+    hasTrueFalseTransformSignal(value) ||
+    /\b(?:caveat|condition|contraindication|criterion|criteria|exception|limitation|mechanism|pathway|timing|threshold|whereas)\b/.test(
+      value
+    )
+  );
+}
+
+function looksLikeObviousNegationTrap(value: string): boolean {
+  return (
+    /\b(?:does not|did not|do not|no|not)\s+(?:observe|observed|show|showed|find|found|detect|detected|report|reported|identify|identified)\b.{0,120}\b(?:necessarily|always|never|proves?|means?|rules?\s+out|exclude|preclude|cannot|does not cause|did not cause)\b/.test(
+      value
+    ) ||
+    /\babsence of (?:an? )?(?:observed |reported |detected )?(?:adverse )?effect\b.{0,80}\b(?:proves?|means?|rules?\s+out|exclude|preclude)\b/.test(
+      value
+    ) ||
+    /\b(?:necessarily|always|never)\b.{0,80}\b(?:does not cause|did not cause|cannot cause|means)\b/.test(
+      value
+    )
+  );
+}
+
+function findHighDifficultyTrueFalseFailure(question: GeneratedQuestion): VerifierResult | null {
+  if (question.type !== "TRUE_FALSE" || question.difficulty < 4) {
+    return null;
+  }
+
+  const stem = normalizeSpace(question.stem);
+  const normalizedStem = stem.toLowerCase();
+  const normalizedContext = `${normalizedStem} ${question.rationale.toLowerCase()}`;
+  const hasDiscriminator = hasMeaningfulTrueFalseDiscriminator(normalizedContext);
+  const broadSummaryPattern =
+    /\b(?:is|are|can be|may be|was|were)\s+(?:a |an |the )?(?:cause|caused by|associated with|characterized by|defined as|due to|important for|linked to|related to|used to|useful for)\b/.test(
+      normalizedStem
+    ) ||
+    /\b(?:can|may|might|could)\s+(?:cause|lead to|result in|be associated with|be linked to)\b/.test(
+      normalizedStem
+    ) ||
+    /\b(?:patients?|people|studies|medications?|treatments?|drugs?)\b.{0,80}\b(?:are more likely|can|may|often|usually|typically)\b/.test(
+      normalizedStem
+    );
+  const simplisticAbsolute =
+    /\b(?:always|never|all|none|only|entirely|exclusively|necessarily|completely)\b/.test(
+      normalizedStem
+    ) && !hasDiscriminator;
+
+  if (looksLikeObviousNegationTrap(normalizedStem)) {
+    return {
+      status: "FAILED",
+      reason:
+        "High-difficulty true/false item uses an obvious negation trap rather than a grounded source-specific distinction",
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      confidence: "HIGH"
+    };
+  }
+
+  if (
+    !hasDiscriminator ||
+    simplisticAbsolute ||
+    (broadSummaryPattern && !hasNuanceSignal(normalizedContext))
+  ) {
+    return {
+      status: "FAILED",
+      reason:
+        "High-difficulty true/false item is too broad or obvious and does not depend on a meaningful grounded qualifier, exception, mechanism, caveat, timing detail, or distinction",
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      confidence: "MEDIUM"
+    };
+  }
+
+  return null;
+}
+
 function looksLikeLowDepthMcq(question: GeneratedQuestion): boolean {
   if (question.type !== "MCQ") {
     return false;
@@ -881,6 +957,22 @@ export async function verifyQuestion(params: {
       "Verifier rejected near-copy low-educational-value question before LLM review"
     );
     return nearCopyFailure;
+  }
+
+  const highDifficultyTrueFalseFailure = findHighDifficultyTrueFalseFailure(params.question);
+  if (highDifficultyTrueFalseFailure) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        difficulty: params.question.difficulty,
+        failureCodes: highDifficultyTrueFalseFailure.failureCodes ?? [],
+        reason: highDifficultyTrueFalseFailure.reason,
+        questionId: params.questionId ?? null,
+        userId: params.userId ?? null
+      },
+      "Verifier rejected low-discrimination high-difficulty true/false question before LLM review"
+    );
+    return highDifficultyTrueFalseFailure;
   }
 
   const chunkMap = params.chunks

@@ -94,7 +94,7 @@ If no background level is provided, assume `generalist`.
 
 Medicine:
 - REJECT: "Chemical peels can treat acne scarring. T/F"
-- ACCEPT: "According to the source, medium-depth TCA peels produce more durable improvement in ice-pick scars than superficial glycolic peels at the concentrations described. T/F"
+- ACCEPT: "At the concentrations described, medium-depth TCA peels produce more durable improvement in ice-pick scars than superficial glycolic peels. T/F"
 
 Accounting:
 - REJECT: "Depreciation reduces an asset's book value. T/F"
@@ -220,10 +220,14 @@ Do NOT write phrases such as:
 - in the excerpts
 - according to the excerpt
 - according to the evidence provided
+- according to the data provided
 - according to the material provided
 - according to the source chunk
 - based on the provided evidence
+- based on the data provided
 - based on the source
+- the data provided show
+- the evidence provided shows
 - the evidence states
 - the material states
 - the passage states
@@ -281,6 +285,12 @@ General interpretation:
 
 Do not pretend the material supports level 4 or 5 if it does not.
 When in doubt, prefer a cleaner lower-difficulty item over a forced complex one.
+
+For difficulty 4-5:
+- Prefer discriminative MCQ or SHORT_ANSWER-style reasoning when the requested type permits it.
+- If the requested type is TRUE_FALSE, the statement must be subtle and exam-like, not simple recall.
+- TRUE_FALSE must turn on a meaningful grounded qualifier, exception, mechanism, caveat, timing detail, condition, comparison, or distinction.
+- Reject broad summary claims, obvious negation traps, and statements answerable by common sense without the source.
 
 ## Style profile usage
 
@@ -366,6 +376,8 @@ Rules:
 - near-verbatim source restatements must be rejected even when technically grounded and citation-supported
 - if the configured outsider could answer this exact statement correctly without the specific cited detail, return `INSUFFICIENT_EVIDENCE`
 - when higher-rigor or exam-style questions are requested, only use TRUE_FALSE for meaningful distinctions, not obvious textbook statements
+- for difficulty 4-5, TRUE_FALSE must be subtle and exam-like; avoid broad claims such as "X can cause Y", "X is associated with Y", or "X is used for Y" unless the truth value depends on a narrow grounded caveat or distinction
+- for difficulty 4-5, do not use common-sense negation traps such as "a study did not observe an adverse effect, therefore the medication cannot cause it"
 - when higher-rigor or exam-style questions are requested, prefer statements whose truth value depends on a qualifier, mechanism, exception, timing detail, context, management caveat, or overlapping feature that is clearly grounded
 - avoid broad summary statements such as “X is characterized by Y” unless the distinction is genuinely tricky and clearly supported
 - avoid giveaway wording, especially simplistic absolutes used only as an easy trap
