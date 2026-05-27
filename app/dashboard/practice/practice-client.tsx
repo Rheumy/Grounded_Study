@@ -28,7 +28,14 @@ type QuestionFeedbackLabel =
   | "HARD"
   | "GOOD_QUESTION"
   | "DISPUTED_INCORRECT"
-  | "IRRELEVANT";
+  | "IRRELEVANT"
+  | "GOOD_EXAM_STYLE"
+  | "TOO_EASY_LOW_VALUE"
+  | "POOR_WORDING"
+  | "NOT_EXAM_RELEVANT"
+  | "INCORRECT_OR_UNSUPPORTED"
+  | "DOCUMENT_TRIVIA"
+  | "OTHER";
 
 type QuestionFeedback = {
   label: QuestionFeedbackLabel;
@@ -130,14 +137,23 @@ const questionSourceTabs: { value: RecycleMode; label: string }[] = [
 ];
 
 const questionFeedbackOptions: { label: string; value: QuestionFeedbackLabel }[] = [
-  { label: "Easy", value: "EASY" },
-  { label: "Hard", value: "HARD" },
-  { label: "Good question", value: "GOOD_QUESTION" },
-  { label: "Incorrect question", value: "DISPUTED_INCORRECT" },
-  { label: "Irrelevant", value: "IRRELEVANT" }
+  { label: "Good exam-style question", value: "GOOD_EXAM_STYLE" },
+  { label: "Too easy / low value", value: "TOO_EASY_LOW_VALUE" },
+  { label: "Poor wording", value: "POOR_WORDING" },
+  { label: "Not exam-relevant", value: "NOT_EXAM_RELEVANT" },
+  { label: "Incorrect or unsupported", value: "INCORRECT_OR_UNSUPPORTED" },
+  { label: "Tests document trivia", value: "DOCUMENT_TRIVIA" },
+  { label: "Other / add comment", value: "OTHER" }
 ];
 
 function getQuestionFeedbackLabel(label: QuestionFeedbackLabel | null): string | null {
+  if (label === "GOOD_EXAM_STYLE") return "Good exam-style question";
+  if (label === "TOO_EASY_LOW_VALUE") return "Too easy / low value";
+  if (label === "POOR_WORDING") return "Poor wording";
+  if (label === "NOT_EXAM_RELEVANT") return "Not exam-relevant";
+  if (label === "INCORRECT_OR_UNSUPPORTED") return "Incorrect or unsupported";
+  if (label === "DOCUMENT_TRIVIA") return "Tests document trivia";
+  if (label === "OTHER") return "Other / add comment";
   if (label === "EASY") return "Easy";
   if (label === "HARD") return "Hard";
   if (label === "GOOD_QUESTION") return "Good question";
@@ -147,19 +163,31 @@ function getQuestionFeedbackLabel(label: QuestionFeedbackLabel | null): string |
 }
 
 function requiresFeedbackComment(label: QuestionFeedbackLabel): boolean {
-  return label === "DISPUTED_INCORRECT" || label === "IRRELEVANT";
+  return label !== "GOOD_EXAM_STYLE";
+}
+
+function requiresNonEmptyFeedbackComment(label: QuestionFeedbackLabel): boolean {
+  return label === "OTHER";
 }
 
 function getFeedbackCommentPrompt(label: QuestionFeedbackLabel | null): string {
-  if (label === "DISPUTED_INCORRECT") {
-    return "Briefly tell us what seems wrong with this question or answer.";
+  if (label === "OTHER") {
+    return "Add a short note so we know what to fix.";
   }
 
-  if (label === "IRRELEVANT") {
-    return "Briefly tell us why this question was not useful or relevant.";
+  if (label === "INCORRECT_OR_UNSUPPORTED") {
+    return "Optional: tell us what seems wrong or unsupported.";
   }
 
-  return "";
+  if (label === "NOT_EXAM_RELEVANT") {
+    return "Optional: tell us what your exam expects instead.";
+  }
+
+  if (label === "DOCUMENT_TRIVIA") {
+    return "Optional: tell us why this feels like document trivia.";
+  }
+
+  return "Optional: add a short note for the beta team.";
 }
 
 export function PracticeClient() {
@@ -561,6 +589,11 @@ export function PracticeClient() {
 
   const submitQuestionFeedbackWithComment = () => {
     if (!pendingFeedbackLabel) return;
+    if (requiresNonEmptyFeedbackComment(pendingFeedbackLabel) && !questionFeedbackComment.trim()) {
+      setQuestionFeedbackStatus("Add a short comment for Other feedback.");
+      return;
+    }
+
     void saveQuestionFeedback(pendingFeedbackLabel, questionFeedbackComment);
   };
 
@@ -902,8 +935,9 @@ export function PracticeClient() {
                     <div className="space-y-1">
                       <p className="text-sm font-medium text-ink">How was this question?</p>
                       <p className="text-xs text-ink/60">
-                        “Incorrect question” and “Irrelevant” are feedback labels. “Hide this
-                        question” removes it from your future practice and mock exams.
+                        Help improve SULCAI. Was this question useful? Choose the closest
+                        reason or add a comment. Hide is separate and removes it from your
+                        future practice and mock exams.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -982,7 +1016,11 @@ export function PracticeClient() {
                         <Textarea
                           value={questionFeedbackComment}
                           onChange={(event) => setQuestionFeedbackComment(event.target.value)}
-                          placeholder="Optional comment"
+                          placeholder={
+                            requiresNonEmptyFeedbackComment(pendingFeedbackLabel)
+                              ? "Required comment"
+                              : "Optional comment"
+                          }
                           disabled={isSavingQuestionFeedback}
                         />
                         <div className="flex flex-wrap gap-2">

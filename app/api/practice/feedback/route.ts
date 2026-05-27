@@ -4,17 +4,55 @@ import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
 
 const QUESTION_STYLE_PROMPT_THRESHOLD = 3;
-const HIDING_FEEDBACK_LABELS = ["DISPUTED_INCORRECT", "IRRELEVANT"] as const;
+const LEGACY_HIDING_FEEDBACK_LABELS = ["DISPUTED_INCORRECT", "IRRELEVANT"] as const;
+const BETA_FEEDBACK_LABELS = [
+  "GOOD_EXAM_STYLE",
+  "TOO_EASY_LOW_VALUE",
+  "POOR_WORDING",
+  "NOT_EXAM_RELEVANT",
+  "INCORRECT_OR_UNSUPPORTED",
+  "DOCUMENT_TRIVIA",
+  "OTHER"
+] as const;
+const ALL_FEEDBACK_LABELS = [
+  "EASY",
+  "HARD",
+  "GOOD_QUESTION",
+  "DISPUTED_INCORRECT",
+  "IRRELEVANT",
+  ...BETA_FEEDBACK_LABELS
+] as const;
+const BETA_ISSUE_FEEDBACK_LABELS = BETA_FEEDBACK_LABELS.filter(
+  (label) => label !== "GOOD_EXAM_STYLE"
+);
 
 const PracticeFeedbackSchema = z.object({
   questionId: z.string().trim().min(1),
   attemptId: z.string().trim().min(1).optional(),
-  label: z.enum(["EASY", "HARD", "GOOD_QUESTION", "DISPUTED_INCORRECT", "IRRELEVANT"]),
+  label: z.enum(ALL_FEEDBACK_LABELS),
   comment: z.string().trim().max(500).optional()
+}).superRefine((value, ctx) => {
+  if (value.label !== "OTHER") {
+    return;
+  }
+
+  if (!value.comment?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["comment"],
+      message: "Other feedback needs a comment."
+    });
+  }
 });
 
 function isHidingFeedbackLabel(label: z.infer<typeof PracticeFeedbackSchema>["label"]): boolean {
-  return HIDING_FEEDBACK_LABELS.includes(label as (typeof HIDING_FEEDBACK_LABELS)[number]);
+  return LEGACY_HIDING_FEEDBACK_LABELS.includes(
+    label as (typeof LEGACY_HIDING_FEEDBACK_LABELS)[number]
+  );
+}
+
+function isBetaIssueFeedbackLabel(label: z.infer<typeof PracticeFeedbackSchema>["label"]): boolean {
+  return BETA_ISSUE_FEEDBACK_LABELS.includes(label as (typeof BETA_ISSUE_FEEDBACK_LABELS)[number]);
 }
 
 function toValidationErrorMessage(error: z.ZodError): string {
@@ -33,10 +71,14 @@ function toValidationErrorMessage(error: z.ZodError): string {
   }
 
   if (issue.path[0] === "comment") {
+    if (issue.code === "custom") {
+      return "Add a short comment for Other feedback.";
+    }
+
     return "Keep your note under 500 characters.";
   }
 
-  return "Choose Easy, Hard, Good question, Incorrect question, or Irrelevant.";
+  return "Choose one of the question feedback options.";
 }
 
 export async function POST(request: Request) {
@@ -120,14 +162,14 @@ export async function POST(request: Request) {
         where: {
           userId: user.id,
           label: {
-            in: [...HIDING_FEEDBACK_LABELS]
+            in: [...BETA_ISSUE_FEEDBACK_LABELS, ...LEGACY_HIDING_FEEDBACK_LABELS]
           }
         }
       })
     ]);
     const hidesQuestionFromFuture = isHidingFeedbackLabel(parsed.data.label);
     const shouldShowQuestionStylePrompt =
-      hidesQuestionFromFuture &&
+      isBetaIssueFeedbackLabel(parsed.data.label) &&
       flaggedFeedbackCount >= QUESTION_STYLE_PROMPT_THRESHOLD &&
       !isHidingFeedbackLabel(existingFeedback?.label ?? "EASY");
 

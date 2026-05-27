@@ -20,6 +20,19 @@ const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in t
 
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = (typeof RECYCLE_MODES)[number];
+type QuestionFeedbackLabelDto =
+  | "EASY"
+  | "HARD"
+  | "GOOD_QUESTION"
+  | "DISPUTED_INCORRECT"
+  | "IRRELEVANT"
+  | "GOOD_EXAM_STYLE"
+  | "TOO_EASY_LOW_VALUE"
+  | "POOR_WORDING"
+  | "NOT_EXAM_RELEVANT"
+  | "INCORRECT_OR_UNSUPPORTED"
+  | "DOCUMENT_TRIVIA"
+  | "OTHER";
 
 const NEW_QUESTION_ORDER = [
   { createdAt: "desc" },
@@ -34,7 +47,7 @@ type PracticeQuestionDto = {
   difficulty: number;
   tagsJson: unknown;
   userFeedback: {
-    label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+    label: QuestionFeedbackLabelDto;
     comment: string | null;
   } | null;
 };
@@ -111,7 +124,7 @@ function toPracticeQuestionDto(question: {
   difficulty: number;
   tagsJson: unknown;
   questionFeedbacks: Array<{
-    label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+    label: QuestionFeedbackLabelDto;
     comment: string | null;
   }>;
 }): PracticeQuestionDto {
@@ -227,7 +240,7 @@ export async function GET(request: Request) {
         difficulty: number;
         tagsJson: unknown;
         questionFeedbacks: Array<{
-          label: "EASY" | "HARD" | "GOOD_QUESTION" | "DISPUTED_INCORRECT" | "IRRELEVANT";
+          label: QuestionFeedbackLabelDto;
           comment: string | null;
         }>;
       }
