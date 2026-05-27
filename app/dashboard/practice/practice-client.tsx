@@ -367,7 +367,9 @@ export function PracticeClient() {
       setQuestion(null);
       setFeedback(null);
       setResults([]);
-      setStatus("Generating your questions... this usually takes 2-5 minutes");
+      setStatus(
+        "Preparing questions from your document. Small documents often process within a few minutes; larger PDFs may take longer. You can leave this page and come back."
+      );
 
       try {
         const response = await fetch("/api/questions/generate", {
@@ -1060,27 +1062,8 @@ export function PracticeClient() {
                     {showQuestionStylePrompt ? (
                       <div className="space-y-3 rounded-lg border border-ink/10 bg-white p-3">
                         <p className="text-sm text-ink/75">
-                          We’re seeing a few questions that missed the mark. Generate a smaller
-                          set from your strongest ready material, then use feedback to hide items
-                          that are not useful.
+                          Thanks — this feedback helps improve future question generation.
                         </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => router.push("/dashboard/generate")}
-                          >
-                            Generate more questions
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setShowQuestionStylePrompt(false)}
-                          >
-                            Not now
-                          </Button>
-                        </div>
                       </div>
                     ) : null}
                   </div>

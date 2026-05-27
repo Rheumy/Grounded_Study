@@ -50,6 +50,8 @@ const INTERRUPTED_UPLOAD_MESSAGE = "This file was not uploaded before you left t
 const RECONCILED_UPLOAD_MESSAGE = "This document was uploaded and is shown below.";
 const CHECKING_UPLOAD_MESSAGE =
   "This document may still be uploading or processing. We are checking the document list below.";
+const PROCESSING_WAIT_COPY =
+  "Small documents often process within a few minutes. Larger PDFs may take longer. You can leave this page and come back.";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -782,7 +784,7 @@ export function UploadForm({
           ) : null}
           {loading ? (
             <p className="text-xs text-ink/60">
-              Stay on this page until uploads start. Once a document appears below, processing will continue even if you navigate away.
+              Stay on this page until uploads start. Once a document appears below, background processing will continue even if you navigate away.
             </p>
           ) : null}
           {!loading && hasInterruptedItems ? (
@@ -791,7 +793,9 @@ export function UploadForm({
             </p>
           ) : null}
           {!loading && hasDocumentBackedItems ? (
-            <p className="text-xs text-ink/60">Recently uploaded documents continue processing below.</p>
+            <p className="text-xs text-ink/60">
+              Recently uploaded documents continue processing below. {PROCESSING_WAIT_COPY}
+            </p>
           ) : null}
           <ul className="space-y-2">
             {items.map((item) => (
@@ -837,7 +841,7 @@ export function UploadForm({
         <div className="space-y-1">
           <p className="text-sm font-medium text-ink">Questions to prepare</p>
           <p className="text-xs text-ink/55">
-            We&apos;ll start generating these as soon as your document is ready. This usually takes 2-5 minutes.
+            We&apos;ll start generating these as soon as your document is ready. {PROCESSING_WAIT_COPY}
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">

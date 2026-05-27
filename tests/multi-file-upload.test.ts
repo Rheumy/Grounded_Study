@@ -37,6 +37,7 @@ import {
 } from "@/app/dashboard/documents/upload-form";
 import {
   buildDeleteDocumentRequestInit,
+  getStatusMessage,
   toggleAllSelectedDocumentIds,
   toggleSelectedDocumentId
 } from "@/app/dashboard/documents/documents-list";
@@ -400,6 +401,34 @@ describe("multi-file upload helpers", () => {
 });
 
 describe("document selection helpers", () => {
+  it("uses reassuring processing copy for normal and long-running documents", () => {
+    expect(
+      getStatusMessage(
+        {
+          id: "doc-1",
+          title: "small.pdf",
+          status: "PROCESSING",
+          createdAt: "2026-05-04T10:00:00.000Z",
+          latestError: null
+        },
+        new Date("2026-05-04T10:04:00.000Z").getTime()
+      )
+    ).toContain("larger PDFs may take longer");
+
+    expect(
+      getStatusMessage(
+        {
+          id: "doc-2",
+          title: "large.pdf",
+          status: "PROCESSING",
+          createdAt: "2026-05-04T10:00:00.000Z",
+          latestError: null
+        },
+        new Date("2026-05-04T10:20:00.000Z").getTime()
+      )
+    ).toContain("taking longer than usual");
+  });
+
   it("selects one document", () => {
     expect(toggleSelectedDocumentId([], "doc-1", true)).toEqual(["doc-1"]);
   });

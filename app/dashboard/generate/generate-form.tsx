@@ -127,8 +127,8 @@ export function GenerateForm({
         setLoading(true);
         setStatus("Resuming your in-progress generation.");
       } else if (progress.status === "COMPLETED") {
-        setLastCompletedJob(progress);
-        setStatus("Your last generation completed.");
+        setLastCompletedJob(null);
+        setStatus(null);
       } else if (progress.status === "FAILED") {
         setJobProgress(progress);
         setLoading(false);

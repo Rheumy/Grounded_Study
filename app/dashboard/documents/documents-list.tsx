@@ -11,6 +11,8 @@ type Doc = {
   latestError: string | null;
 };
 
+const LONG_PROCESSING_MS = 10 * 60 * 1000;
+
 function getStatusLabel(status: string): string {
   if (status === "QUEUED") return "Queued";
   if (status === "PROCESSING") return "Processing";
@@ -20,13 +22,20 @@ function getStatusLabel(status: string): string {
   return status;
 }
 
-function getStatusMessage(doc: Doc): string {
+export function getStatusMessage(doc: Doc, now = Date.now()): string {
   if (doc.status === "QUEUED") {
-    return "Queued for processing. We will start ingesting this file automatically.";
+    return "Queued for processing. Background processing will continue even if you leave this page.";
   }
 
   if (doc.status === "PROCESSING") {
-    return "Processing your study material now.";
+    const createdAt = doc.createdAt ? new Date(doc.createdAt).getTime() : null;
+    const isLongRunning = createdAt !== null && Number.isFinite(createdAt) && now - createdAt > LONG_PROCESSING_MS;
+
+    if (isLongRunning) {
+      return "This is taking longer than usual. Larger PDFs or temporary AI service delays can take extra time. You can leave this page and check back later.";
+    }
+
+    return "Processing your study material now. Small documents often process within a few minutes; larger PDFs may take longer. You can leave this page and come back.";
   }
 
   if (doc.status === "READY") {
