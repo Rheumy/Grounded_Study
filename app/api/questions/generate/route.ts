@@ -7,6 +7,8 @@ import { resolvePreset } from "@/lib/llm/presets";
 import { enforceQuestionLimit } from "@/lib/billing/usage";
 import { logger } from "@/lib/observability/logger";
 
+const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
+
 export async function POST(request: Request) {
   const user = await requireUserApi();
   if (!user) {
@@ -21,6 +23,10 @@ export async function POST(request: Request) {
       ? body.presetKey.trim()
       : null;
   const difficulty = Math.min(5, Math.max(1, Number(body.difficulty ?? 3)));
+
+  if (body.questionType === "SHORT_ANSWER" || presetKey === "standard_short_answer") {
+    return NextResponse.json({ error: SHORT_ANSWER_BETA_MESSAGE }, { status: 400 });
+  }
 
   if (presetKey && styleProfileId) {
     return NextResponse.json(
@@ -79,9 +85,18 @@ export async function POST(request: Request) {
   let typeMix: TypeMix | null = null;
   if (body.typeMix && typeof body.typeMix === "object") {
     const raw = body.typeMix as Record<string, unknown>;
-    const mcq = Number(raw.MCQ ?? 0);
-    const sa = Number(raw.SHORT_ANSWER ?? 0);
-    const tf = Number(raw.TRUE_FALSE ?? 0);
+    const mcq = Math.round(Number(raw.MCQ ?? 0));
+    const sa = Math.round(Number(raw.SHORT_ANSWER ?? 0));
+    const tf = Math.round(Number(raw.TRUE_FALSE ?? 0));
+
+    if (![mcq, sa, tf].every((value) => Number.isFinite(value) && value >= 0)) {
+      return NextResponse.json({ error: "Question type counts must be zero or greater." }, { status: 400 });
+    }
+
+    if (sa > 0) {
+      return NextResponse.json({ error: SHORT_ANSWER_BETA_MESSAGE }, { status: 400 });
+    }
+
     const total = mcq + sa + tf;
     if (total > 0) {
       if (total !== count) {

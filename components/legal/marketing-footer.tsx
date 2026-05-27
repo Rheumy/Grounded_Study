@@ -4,7 +4,7 @@ export function MarketingFooter() {
   return (
     <footer className="border-t border-ink/10 pt-6">
       <div className="flex flex-wrap items-center gap-4 text-sm text-ink/60">
-        <span>Grounded Study private beta</span>
+        <span>SULCAI private beta</span>
         <Link href="/legal/terms" className="hover:text-ink">
           Terms
         </Link>
@@ -18,4 +18,3 @@ export function MarketingFooter() {
     </footer>
   );
 }
-

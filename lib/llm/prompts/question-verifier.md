@@ -64,6 +64,26 @@ Pass the question only if it is:
 
 If there is any meaningful unsupported claim, ambiguity, citation mismatch, or answer-quality problem, fail it.
 
+## Abbreviation and wording quality
+
+Learner-facing `stem`, `options`, `answer`, and `rationale` must avoid unexplained abbreviations.
+
+Fail if:
+- a non-universal abbreviation appears without being expanded on first use in the same item
+- an MCQ option uses an obscure abbreviation when the abbreviation itself is not being tested
+- the item depends on an abbreviation that the source does not clearly define or support
+- the question invents an expansion not supported by the cited material
+
+Acceptable pattern: `mid-dermal elastolysis (MDE)`.
+Universal abbreviations such as DNA, RNA, MRI, CT, ECG, and HIV may be used without expansion when appropriate.
+
+Also fail hard-to-parse or machine-generated stems, especially convoluted phrasing such as:
+- "Which of the following differentiates..."
+- "Which of the following differentiates X compared to Y..."
+- vague comparison phrasing unless the cited source clearly supports the comparison
+
+Prefer direct exam-style stems. If the same grounded point can be asked more clearly, the current item should fail.
+
 ## What to verify
 
 ### A. Grounding
@@ -142,6 +162,8 @@ Fail if:
 ### F. Educational quality
 Fail if:
 - wording is confusing or awkward
+- learner-facing text uses unexplained non-universal abbreviations
+- the stem uses convoluted "which of the following differentiates..." wording when a simpler direct exam-style stem is possible
 - the question is trivial in a low-value way
 - the question fails the Outsider Test because the exact stem or proposition can be answered without the specific cited detail
 - the wording leaks retrieval mechanics

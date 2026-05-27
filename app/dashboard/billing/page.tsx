@@ -2,7 +2,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { requireUser } from "@/lib/auth/require-user";
 import { getOrCreateSubscription } from "@/lib/billing/subscription";
 import { resolvePlanLimits } from "@/lib/billing/plans";
-import { stripeEnabled } from "@/lib/billing/stripe";
 import { prisma } from "@/lib/db/prisma";
 import { BillingClient } from "@/app/dashboard/billing/billing-client";
 
@@ -27,12 +26,13 @@ export default async function BillingPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Billing &amp; plan</CardTitle>
-        <CardDescription>Review your current plan and daily usage limits.</CardDescription>
+        <CardTitle>Private beta usage</CardTitle>
+        <CardDescription>
+          SULCAI is free during this controlled private beta. Daily safety limits still apply.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <BillingClient
-          stripeEnabled={stripeEnabled()}
           plan={subscription.plan}
           limits={limits}
           usage={usage}

@@ -388,6 +388,139 @@ describe("verifier outsider test", () => {
     expect(result.status).toBe("PASSED");
   });
 
+  it("rejects unexplained non-universal abbreviations in learner-facing MCQ text", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem: "Which diagnosis is associated with loss of elastic fibers in the papillary dermis?",
+        options: [
+          "MDE",
+          "Anetoderma",
+          "Cutis laxa",
+          "Pseudoxanthoma elasticum"
+        ],
+        answer: "MDE",
+        rationale:
+          "The source describes MDE as involving loss of elastic fibers in the papillary dermis.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Mid-dermal elastolysis (MDE) is characterized by selective loss of elastic fibers in the mid dermis.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Mid-dermal elastolysis (MDE) is characterized by selective loss of elastic fibers in the mid dermis.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.reason).toContain("MDE");
+    expect(result.failureCodes).toEqual(expect.arrayContaining(["LOW_EDUCATIONAL_VALUE"]));
+    expect(createCompletion).not.toHaveBeenCalled();
+  });
+
+  it("allows a source-defined abbreviation when expanded on first use in the item", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem:
+          "Which finding best matches mid-dermal elastolysis (MDE) as described in the source?",
+        options: [
+          "Selective loss of elastic fibers in the mid dermis",
+          "Diffuse collagen loss throughout the reticular dermis",
+          "Epidermal blistering with full-thickness necrosis",
+          "Subcutaneous calcification around blood vessels"
+        ],
+        answer: "Selective loss of elastic fibers in the mid dermis",
+        rationale:
+          "Mid-dermal elastolysis (MDE) is described as selective elastic-fiber loss in the mid dermis.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Mid-dermal elastolysis (MDE) is characterized by selective loss of elastic fibers in the mid dermis.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Mid-dermal elastolysis (MDE) is characterized by selective loss of elastic fibers in the mid dermis.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
+  it("rejects convoluted differentiates/compared-to stem wording before LLM review", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "MCQ",
+        stem:
+          "Which of the following differentiates dermatological conditions that feature loss of elastic fibers compared to other conditions characterized by collagen loss?",
+        options: [
+          "Selective elastic-fiber loss in the mid dermis",
+          "Diffuse collagen loss in all dermal layers",
+          "Basement membrane thickening",
+          "Subcutaneous fat necrosis"
+        ],
+        answer: "Selective elastic-fiber loss in the mid dermis",
+        rationale:
+          "The cited source supports selective elastic-fiber loss as the relevant distinguishing feature.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Mid-dermal elastolysis is characterized by selective loss of elastic fibers in the mid dermis.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Mid-dermal elastolysis is characterized by selective loss of elastic fibers in the mid dermis.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.reason).toContain("differentiates");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "AMBIGUOUS_QUESTION"])
+    );
+    expect(createCompletion).not.toHaveBeenCalled();
+  });
+
   it("does not auto-reject a concise source-specific true/false claim just because the topic is familiar", async () => {
     createCompletion.mockResolvedValueOnce({
       choices: [

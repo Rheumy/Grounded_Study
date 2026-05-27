@@ -47,7 +47,7 @@ export function HomepageDemo() {
   return (
     <div
       className="rounded-3xl border border-ink/10 bg-fog p-5"
-      aria-label="Grounded Study upload and question demo"
+      aria-label="SULCAI upload and question demo"
     >
       <div className="mb-4 flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-ink/45">
         <span>Demo</span>

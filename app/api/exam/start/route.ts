@@ -11,6 +11,7 @@ import {
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 type ExamQuestionMix = "MCQ" | "TRUE_FALSE" | "MIXED";
+const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
 
 const NEW_QUESTION_ORDER = [
   { createdAt: "desc" },
@@ -27,6 +28,10 @@ export async function POST(request: Request) {
   const count = Math.min(50, Math.max(1, Number(body.count ?? 10)));
   const timeLimitMin = Math.min(180, Math.max(5, Number(body.timeLimitMin ?? 30)));
   const difficulty = body.difficulty ? Number(body.difficulty) : null;
+  if (body.questionMix === "SHORT_ANSWER") {
+    return NextResponse.json({ error: SHORT_ANSWER_BETA_MESSAGE }, { status: 400 });
+  }
+
   const questionMix: ExamQuestionMix =
     body.questionMix === "TRUE_FALSE" || body.questionMix === "MIXED" ? body.questionMix : "MCQ";
   const hiddenQuestionIds = Array.isArray(body.hiddenQuestionIds)

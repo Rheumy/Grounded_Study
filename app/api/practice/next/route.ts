@@ -16,6 +16,7 @@ import {
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
+const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
 
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = (typeof RECYCLE_MODES)[number];
@@ -174,6 +175,10 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
+  if (searchParams.get("questionType") === "SHORT_ANSWER") {
+    return NextResponse.json({ error: SHORT_ANSWER_BETA_MESSAGE }, { status: 400 });
+  }
+
   const questionType = parseQuestionType(searchParams.get("questionType"));
   const recycleMode = parseRecycleMode(searchParams.get("recycleMode"));
   const excludeQuestionIds = searchParams.getAll("excludeQuestionId").filter(Boolean);

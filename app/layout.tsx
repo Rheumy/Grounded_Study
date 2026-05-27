@@ -7,7 +7,7 @@ const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display" }
 const body = Source_Sans_3({ subsets: ["latin"], variable: "--font-body" });
 
 export const metadata: Metadata = {
-  title: "Grounded Study",
+  title: "SULCAI",
   description: "Generate grounded practice questions from your course materials."
 };
 

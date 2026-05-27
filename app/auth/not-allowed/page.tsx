@@ -9,7 +9,7 @@ export default function NotAllowedPage() {
       description="This beta is currently limited to approved email addresses."
     >
       <p className="text-sm text-ink/70">
-        If you expected access, please contact the Grounded Study team from the email address you
+        If you expected access, please contact the SULCAI team from the email address you
         used to sign in.
       </p>
       <div className="flex flex-wrap gap-3">

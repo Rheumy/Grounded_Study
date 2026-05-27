@@ -18,6 +18,7 @@ import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
 
 const MAX_RETRIES = 3;
 const OUTSIDER_RETRY_BONUS = 1;
+const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
 
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
@@ -472,6 +473,13 @@ export async function generateQuestions(params: {
     | null;
   const presetDistribution = params.presetStyleProfile?.styleProfile.questionTypeDistribution ?? null;
   const profileDistribution = presetDistribution ?? profileSchema?.questionTypeDistribution ?? null;
+  if ((params.typeMix?.SHORT_ANSWER ?? 0) > 0) {
+    throw new Error(SHORT_ANSWER_BETA_MESSAGE);
+  }
+  if (!params.typeMix && (profileDistribution?.SHORT_ANSWER ?? 0) > 0) {
+    throw new Error(SHORT_ANSWER_BETA_MESSAGE);
+  }
+
   const generationStyleProfile = params.presetStyleProfile
     ? buildGenerationStyleProfile({
         name: params.presetStyleProfile.label,

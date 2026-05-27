@@ -214,6 +214,21 @@ Do this only when the material actually supports it. Do not fake depth by invent
 ## Learner-facing writing quality
 
 The learner-facing `stem`, `answer`, and `rationale` must sound like polished teaching material.
+The learner-facing `stem`, `options`, `answer`, and `rationale` must avoid unexplained abbreviations.
+
+Abbreviation rules:
+- Avoid obscure abbreviations in MCQ options unless the abbreviation itself is being tested.
+- If a non-universal abbreviation from the source is necessary, expand it on first use within the same item, for example `mid-dermal elastolysis (MDE)`.
+- Do not invent an expansion. Use an expansion only when the cited source clearly defines or supports it.
+- If the source does not clearly define the abbreviation and the item depends on it, rewrite without the abbreviation or return `INSUFFICIENT_EVIDENCE`.
+- Universal abbreviations such as DNA, RNA, MRI, CT, ECG, and HIV may be used without expansion when appropriate.
+
+Prefer direct exam-style stems. Avoid convoluted wording such as:
+- "Which of the following differentiates..."
+- "Which of the following differentiates X compared to Y..."
+- vague comparison phrasing unless the source clearly supports the comparison
+
+If a stem is hard to parse, sounds machine-generated, or can be expressed more simply, rewrite it before returning the item.
 
 Do NOT write phrases such as:
 - in the excerpt
@@ -287,7 +302,7 @@ Do not pretend the material supports level 4 or 5 if it does not.
 When in doubt, prefer a cleaner lower-difficulty item over a forced complex one.
 
 For difficulty 4-5:
-- Prefer discriminative MCQ or SHORT_ANSWER-style reasoning when the requested type permits it.
+- Prefer discriminative MCQ reasoning when the requested type permits it.
 - If the requested type is TRUE_FALSE, the statement must be subtle and exam-like, not simple recall.
 - TRUE_FALSE must turn on a meaningful grounded qualifier, exception, mechanism, caveat, timing detail, condition, comparison, or distinction.
 - Reject broad summary claims, obvious negation traps, and statements answerable by common sense without the source.
@@ -316,7 +331,6 @@ If `assumedBackgroundLevel` is missing, use `generalist`.
 
 The current system supports:
 - `MCQ`
-- `SHORT_ANSWER`
 - `TRUE_FALSE`
 
 You must generate the requested type exactly.
@@ -335,6 +349,7 @@ Rules:
 - when advanced or exam-style rigor is requested, distractors should usually come from the same conceptual family as the correct answer
 - options must be mutually distinct
 - options must be parallel in style where possible
+- options must avoid unexplained abbreviations; use the expanded form or rewrite the option unless the abbreviation itself is being tested
 - do not use “all of the above” or “none of the above”
 - do not make the correct answer obviously longer or more specific unless the source itself requires it
 - `answer` must exactly match the correct option text
@@ -346,15 +361,6 @@ Rules:
 - silently identify the closest competing distractor before finalizing the item
 - only keep the item if you can justify from the cited evidence why the keyed answer clearly beats that closest distractor
 - if two options could both be reasonably defended from the source, return `INSUFFICIENT_EVIDENCE`
-
-### SHORT_ANSWER
-Rules:
-- omit `options`
-- `answer` must be the model answer
-- phrase the stem as an open question or instruction
-- the model answer should be concise but complete for what the material supports
-- do not over-answer beyond the evidence
-- ask for a conceptually useful explanation, distinction, mechanism, or structured response supported by the material
 
 ### TRUE_FALSE
 Rules:
@@ -392,6 +398,8 @@ Before returning the JSON, silently verify:
 - Is the question actually useful?
 - Is it testing subject matter rather than document metadata?
 - Is the wording clear?
+- Does every non-universal abbreviation in learner-facing text have an expansion on first use in this item?
+- Does the stem use direct exam-style wording rather than convoluted "which of the following differentiates..." phrasing?
 - Is the answer unambiguous?
 - Are the citations real and relevant?
 - For MCQ, are all distractors plausible but wrong?
@@ -401,7 +409,6 @@ Before returning the JSON, silently verify:
 - For TRUE_FALSE, is the statement genuinely decidable?
 - For TRUE_FALSE, does the truth value depend on a meaningful grounded distinction rather than a broad summary cue?
 - For TRUE_FALSE, would the statement still be clearly true or false without smuggling in extra assumptions?
-- For SHORT_ANSWER, is the model answer complete but not overreaching?
 - Does the rationale sound professional and educational?
 - Does the rationale explain the answer in a way that matches the cited evidence?
 - Does the rationale avoid unsupported comparative or causal claims?
@@ -415,7 +422,7 @@ If any of these fail and cannot be fixed, return `INSUFFICIENT_EVIDENCE`.
 Return a single flat JSON object with these exact top-level fields:
 - `type`
 - `stem`
-- `options` (omit only for SHORT_ANSWER)
+- `options`
 - `answer`
 - `rationale`
 - `citations`

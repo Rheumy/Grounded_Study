@@ -11,12 +11,9 @@ export async function SiteNav() {
     <header className="border-b border-ink/10 bg-white/80 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
         <Link href="/" className="text-lg font-semibold text-ink">
-          Grounded Study
+          SULCAI
         </Link>
         <nav className="flex items-center gap-3 text-sm">
-          <Link href="/pricing" className="text-ink/70 hover:text-ink">
-            Pricing
-          </Link>
           <Link href="/dashboard" className="text-ink/70 hover:text-ink">
             Dashboard
           </Link>

@@ -42,7 +42,7 @@ function getResendClient() {
 function buildMagicLinkHtml(url: string) {
   return `
 <div style="font-family: Arial, sans-serif; color: #0b1020; line-height: 1.6;">
-  <p>Sign in to Grounded Study.</p>
+  <p>Sign in to SULCAI.</p>
   <p>
     <a href="${url}" style="color: #0f766e;">Open your sign-in link</a>
   </p>
@@ -54,7 +54,7 @@ function buildMagicLinkHtml(url: string) {
 
 function buildMagicLinkText(url: string) {
   return [
-    "Sign in to Grounded Study.",
+    "Sign in to SULCAI.",
     "",
     url,
     "",
@@ -72,7 +72,7 @@ async function deliverMagicLinkEmail({
   const response = await resend.emails.send({
     from: getEmailFromAddress(),
     to: identifier,
-    subject: "Sign in to Grounded Study",
+    subject: "Sign in to SULCAI",
     text: buildMagicLinkText(url),
     html: buildMagicLinkHtml(url)
   });

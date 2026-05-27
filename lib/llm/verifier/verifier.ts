@@ -10,6 +10,10 @@ import {
 } from "@/lib/llm/schemas/style-profile";
 import { VerifierSchema, type FailureCode } from "@/lib/llm/schemas/verifier";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
+import {
+  findAwkwardStemReason,
+  findUnexplainedAbbreviations
+} from "@/lib/llm/question-quality";
 
 const MODEL = "gpt-4o-mini";
 
@@ -973,6 +977,48 @@ export async function verifyQuestion(params: {
       "Verifier rejected low-discrimination high-difficulty true/false question before LLM review"
     );
     return highDifficultyTrueFalseFailure;
+  }
+
+  const unexplainedAbbreviations = findUnexplainedAbbreviations(params.question);
+  if (unexplainedAbbreviations.length > 0) {
+    const abbreviationFailure: VerifierResult = {
+      status: "FAILED",
+      reason: `Question uses unexplained abbreviation ${unexplainedAbbreviations.join(", ")} in learner-facing text`,
+      failureCodes: ["LOW_EDUCATIONAL_VALUE"],
+      confidence: "HIGH"
+    };
+    logger.info(
+      {
+        questionType: params.question.type,
+        abbreviations: unexplainedAbbreviations,
+        failureCodes: abbreviationFailure.failureCodes ?? [],
+        questionId: params.questionId ?? null,
+        userId: params.userId ?? null
+      },
+      "Verifier rejected unexplained abbreviation before LLM review"
+    );
+    return abbreviationFailure;
+  }
+
+  const awkwardStemReason = findAwkwardStemReason(params.question.stem);
+  if (awkwardStemReason) {
+    const awkwardStemFailure: VerifierResult = {
+      status: "FAILED",
+      reason: awkwardStemReason,
+      failureCodes: ["LOW_EDUCATIONAL_VALUE", "AMBIGUOUS_QUESTION"],
+      confidence: "MEDIUM"
+    };
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: awkwardStemFailure.failureCodes ?? [],
+        reason: awkwardStemReason,
+        questionId: params.questionId ?? null,
+        userId: params.userId ?? null
+      },
+      "Verifier rejected awkward stem before LLM review"
+    );
+    return awkwardStemFailure;
   }
 
   const chunkMap = params.chunks

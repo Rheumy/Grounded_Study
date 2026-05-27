@@ -28,6 +28,7 @@ export default function HomePage() {
       <section className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <div className="space-y-6">
           <Badge>Private beta</Badge>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-ink/45">SULCAI</p>
           <h1 className="text-4xl font-semibold text-ink sm:text-5xl">
             Practice questions from your own notes.
           </h1>
@@ -37,10 +38,7 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap gap-3">
             <Link href="/auth/signin">
-              <Button size="lg">Start free</Button>
-            </Link>
-            <Link href="/pricing">
-              <Button variant="outline" size="lg">See plans</Button>
+              <Button size="lg">Enter private beta</Button>
             </Link>
           </div>
         </div>

@@ -36,6 +36,9 @@ export default async function DocumentsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 rounded-md border border-danger/20 bg-danger/[0.04] p-3 text-sm text-ink/75">
+            Please do not upload patient-identifiable information or confidential clinical records.
+          </div>
           <UploadForm
             userId={user.id}
             useClientUploads={Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.VERCEL)}

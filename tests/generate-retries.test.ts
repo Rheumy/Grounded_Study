@@ -183,7 +183,7 @@ describe("generation retries", () => {
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
   });
 
-  it("clamps legacy short-answer-only profile distributions to the MCQ fallback", async () => {
+  it("blocks legacy short-answer-only profile distributions during beta", async () => {
     (prisma.styleProfile.findFirst as any).mockResolvedValue({
       id: "profile-1",
       name: "Legacy short-answer profile",
@@ -197,16 +197,15 @@ describe("generation retries", () => {
     (generateQuestion as any).mockResolvedValue(buildGeneratedQuestion("chunk-a"));
     (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
 
-    const results = await generateQuestions({
+    await expect(generateQuestions({
       ownerId: "user-1",
       documentIds: ["doc-1"],
       styleProfileId: "profile-1",
       difficulty: 3,
       count: 1
-    });
+    })).rejects.toThrow("Short-answer questions are not available in this beta yet.");
 
-    expect((generateQuestion as any).mock.calls[0][0].questionType).toBe("MCQ");
-    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+    expect(generateQuestion).not.toHaveBeenCalled();
   });
 
   it("records one chunk-usage row per cited chunk after saving a question", async () => {
