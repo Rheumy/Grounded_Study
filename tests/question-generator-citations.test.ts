@@ -86,6 +86,79 @@ describe("question generator citation handling", () => {
     expect(baseChunk.content.includes(result.citations[0]?.excerpt ?? "")).toBe(true);
   });
 
+  it("normalizes a valid TRUE_FALSE response into the canonical schema", async () => {
+    createCompletionMock.mockResolvedValueOnce(
+      buildResponse({
+        type: "TRUE_FALSE",
+        stem: "IL-23 blockade reduced relapse within 12 weeks compared with placebo.",
+        options: ["True", "False"],
+        answer: "The statement is true.",
+        rationale:
+          "The cited evidence states that IL-23 blockade reduced relapse within 12 weeks compared with placebo.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "IL-23 blockade reduced relapse\nwithin 12 weeks compared with placebo",
+            page: 4
+          }
+        ],
+        difficulty: 3
+      })
+    );
+
+    const result = await generateQuestion({
+      styleProfile: { assumedBackgroundLevel: "generalist" },
+      difficulty: 3,
+      questionType: "TRUE_FALSE",
+      chunks: [baseChunk]
+    });
+
+    expect(result).toMatchObject({
+      type: "TRUE_FALSE",
+      options: ["True", "False"],
+      answer: "True",
+      verifierStatus: "PENDING"
+    });
+  });
+
+  it("adds TRUE_FALSE-specific retry guidance after a wrong-type response", async () => {
+    createCompletionMock.mockResolvedValueOnce(
+      buildResponse({
+        type: "TRUE_FALSE",
+        stem: "IL-23 blockade reduced relapse within 12 weeks compared with placebo.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The cited evidence states that IL-23 blockade reduced relapse within 12 weeks compared with placebo.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "IL-23 blockade reduced relapse\nwithin 12 weeks compared with placebo",
+            page: 4
+          }
+        ],
+        difficulty: 3
+      })
+    );
+
+    await generateQuestion({
+      styleProfile: { assumedBackgroundLevel: "generalist" },
+      difficulty: 3,
+      questionType: "TRUE_FALSE",
+      chunks: [baseChunk],
+      retryContext: {
+        strategy: "type_correction",
+        previousFailureReason: "Generated MCQ when TRUE_FALSE was requested"
+      }
+    });
+
+    const userMessage = createCompletionMock.mock.calls[0]?.[0].messages[1].content;
+    expect(userMessage).toContain('`type` must be exactly `"TRUE_FALSE"`');
+    expect(userMessage).toContain('`options` must be exactly `["True", "False"]`');
+  });
+
   it("fails fast when the citation excerpt cannot be repaired to exact chunk text", async () => {
     createCompletionMock.mockResolvedValueOnce(
       buildResponse({

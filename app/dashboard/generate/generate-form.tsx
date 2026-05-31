@@ -107,8 +107,12 @@ export function GenerateForm({
 
     if (nextProgress.status === "COMPLETED") {
       setLastCompletedJob(nextProgress);
-      setStatus("Your last generation completed.");
-      if (completedNavigationRef.current !== nextProgress.jobId) {
+      setStatus(
+        nextProgress.passedCount > 0
+          ? "Your last generation completed."
+          : "No valid questions were saved."
+      );
+      if (nextProgress.passedCount > 0 && completedNavigationRef.current !== nextProgress.jobId) {
         completedNavigationRef.current = nextProgress.jobId;
         router.push("/dashboard/practice");
       }

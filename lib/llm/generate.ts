@@ -22,7 +22,7 @@ const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in t
 
 type QuestionTypeName = "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
 type RetryMode = "initial_retrieval" | "same_chunks" | "refreshed_retrieval";
-type RetryStrategy = "default" | "narrow_source_specific";
+type RetryStrategy = "default" | "narrow_source_specific" | "type_correction";
 
 function durationMs(startedAt: number): number {
   return Date.now() - startedAt;
@@ -509,6 +509,11 @@ export async function generateQuestions(params: {
   );
 
   const results = [] as { questionId?: string; status: string; reason?: string }[];
+  const savedTypeCounts: Record<QuestionTypeName, number> = {
+    MCQ: 0,
+    SHORT_ANSWER: 0,
+    TRUE_FALSE: 0
+  };
 
   for (let i = 0; i < params.count; i += 1) {
     const questionType = typeSlots[i] ?? "MCQ";
@@ -632,10 +637,11 @@ export async function generateQuestions(params: {
           questionType,
           chunks: currentChunks,
           retryContext:
-            retryStrategy === "narrow_source_specific"
+            retryStrategy !== "default"
               ? {
                   strategy: retryStrategy,
-                  previousFailureReason: narrowRetryReason
+                  previousFailureReason:
+                    retryStrategy === "narrow_source_specific" ? narrowRetryReason : reason
                 }
               : undefined,
           userId: params.ownerId,
@@ -651,6 +657,7 @@ export async function generateQuestions(params: {
           {
             ownerId: params.ownerId,
             questionType,
+            returnedQuestionType: generated.type,
             attempt: attempt + 1,
             retryMode,
             phaseDurationMs: durationMs(generationStartedAt)
@@ -701,12 +708,14 @@ export async function generateQuestions(params: {
       if (generated.type !== questionType) {
         reason = `Generated ${generated.type} when ${questionType} was requested`;
         retryMode = "same_chunks";
+        retryStrategy = "type_correction";
         logger.warn(
           {
             ownerId: params.ownerId,
             requestedQuestionType: questionType,
             generatedQuestionType: generated.type,
             attempt: attempt + 1,
+            typeMismatchRetryCount: attempt + 1,
             retryMode
           },
           "Generated question type did not match requested slot"
@@ -931,6 +940,7 @@ export async function generateQuestions(params: {
       }
 
       results.push({ questionId: record.id, status: "PASSED" });
+      savedTypeCounts[questionType] += 1;
       await params.onProgress?.({
         phase: "saved",
         questionNumber: i + 1,
@@ -957,7 +967,8 @@ export async function generateQuestions(params: {
       documentCount: params.documentIds.length,
       requestedCount: params.count,
       passedCount: passed,
-      failedCount: failed
+      failedCount: failed,
+      savedTypeCounts
     },
     "Generation completed"
   );

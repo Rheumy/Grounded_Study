@@ -7,6 +7,9 @@ import { generateQuestions, type GenerationProgressEvent, type TypeMix } from "@
 import { resolvePreset } from "@/lib/llm/presets";
 import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
 
+const ZERO_SAVED_GENERATION_MESSAGE =
+  "No valid questions were saved. Please try again with a smaller or more focused source.";
+
 export async function processIngestionJob(jobId: string) {
   const job = await prisma.ingestionJob.findUnique({
     where: { id: jobId },
@@ -176,6 +179,31 @@ export async function processGenerationJob(jobId: string) {
     });
 
     const passedCount = results.filter((result) => result.status === "PASSED").length;
+    if (passedCount === 0) {
+      await prisma.generationJob.update({
+        where: { id: jobId },
+        data: {
+          status: "FAILED",
+          passedCount: 0,
+          currentPhase: "No valid questions were saved",
+          completedAt: new Date(),
+          errorMessage: ZERO_SAVED_GENERATION_MESSAGE
+        }
+      });
+      logger.info(
+        {
+          jobId,
+          status: "FAILED",
+          userId: job.userId,
+          requestedCount: job.requestedCount,
+          typeMix,
+          passedCount: 0
+        },
+        "Generation job completed with zero saved questions"
+      );
+      return;
+    }
+
     await incrementUsage({ userId: job.userId, questions: passedCount });
     await prisma.generationJob.update({
       where: { id: jobId },

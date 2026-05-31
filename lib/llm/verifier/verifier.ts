@@ -1076,7 +1076,10 @@ export async function verifyQuestion(params: {
   try {
     rawJson = JSON.parse(rawText);
   } catch {
-    logger.warn({ rawPreview: rawText.slice(0, 300) }, "Verifier returned non-JSON response");
+    logger.warn(
+      { questionType: params.question.type },
+      "Verifier returned non-JSON response"
+    );
     return { status: "FAILED", reason: "Verifier returned non-JSON response" };
   }
 

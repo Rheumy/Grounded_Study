@@ -510,15 +510,38 @@ function buildOverviewAvoidanceGuidance(params: {
 function buildRetryGuidance(params: {
   retryContext?:
     | {
-        strategy: "default" | "narrow_source_specific";
+        strategy: "default" | "narrow_source_specific" | "type_correction";
         previousFailureReason?: string | null;
       }
     | undefined;
   requestedType: "MCQ" | "SHORT_ANSWER" | "TRUE_FALSE";
   chunks: RetrievalChunk[];
 }): string | null {
-  if (!params.retryContext || params.retryContext.strategy !== "narrow_source_specific") {
+  if (!params.retryContext || params.retryContext.strategy === "default") {
     return null;
+  }
+
+  if (params.retryContext.strategy === "type_correction") {
+    const lines = [
+      "Retry guidance:",
+      `- A previous attempt returned the wrong question type. You must return type "${params.requestedType}" exactly.`,
+      "- Do not return MCQ structure unless the requested type is MCQ."
+    ];
+
+    if (params.requestedType === "TRUE_FALSE") {
+      lines.push(
+        '- Return `type`: `"TRUE_FALSE"`.',
+        '- Return `options`: `["True", "False"]`.',
+        '- Return `answer`: exactly `"True"` or `"False"`.',
+        "- The stem must be one declarative statement, not a multiple-choice stem and not a question ending in 'True or false?'."
+      );
+    }
+
+    if (params.retryContext.previousFailureReason) {
+      lines.push(`- Previous failure reason: ${params.retryContext.previousFailureReason}`);
+    }
+
+    return lines.join("\n");
   }
 
   const lines = [
@@ -602,8 +625,20 @@ function shuffleOptions(options: string[]): string[] {
 
 function canonicalizeTrueFalseAnswer(answer: string): string {
   const normalized = collapseWhitespace(answer).toLowerCase();
-  if (["true", "t", "yes"].includes(normalized)) return "True";
-  if (["false", "f", "no"].includes(normalized)) return "False";
+  if (
+    ["true", "t", "yes"].includes(normalized) ||
+    /^true\b/.test(normalized) ||
+    /^the (?:statement|proposition|claim) is true\.?$/.test(normalized)
+  ) {
+    return "True";
+  }
+  if (
+    ["false", "f", "no"].includes(normalized) ||
+    /^false\b/.test(normalized) ||
+    /^the (?:statement|proposition|claim) is false\.?$/.test(normalized)
+  ) {
+    return "False";
+  }
   return collapseWhitespace(answer);
 }
 
@@ -948,7 +983,7 @@ export async function generateQuestion(params: {
   chunks: RetrievalChunk[];
   retryContext?:
     | {
-        strategy: "default" | "narrow_source_specific";
+        strategy: "default" | "narrow_source_specific" | "type_correction";
         previousFailureReason?: string | null;
       }
     | undefined;
@@ -971,6 +1006,15 @@ export async function generateQuestion(params: {
 
   const user = [
     `Question type: ${requestedType}`,
+    requestedType === "TRUE_FALSE"
+      ? [
+          "Required TRUE_FALSE output contract:",
+          '- `type` must be exactly `"TRUE_FALSE"`.',
+          '- `options` must be exactly `["True", "False"]`.',
+          '- `answer` must be exactly `"True"` or `"False"`.',
+          "- `stem` must be one declarative statement. Do not write a multiple-choice stem and do not append 'True or false?'."
+        ].join("\n")
+      : null,
     `Difficulty: ${params.difficulty}${difficultyDescriptor ? ` (${difficultyDescriptor})` : ""}`,
     buildOutsiderTestContext(params.styleProfile),
     buildOverviewAvoidanceGuidance({ requestedType, styleProfile: params.styleProfile }),
@@ -992,6 +1036,15 @@ export async function generateQuestion(params: {
   // endpoint's strict mode always rejects schemas with optional fields, so we
   // skip it and normalise the raw model output ourselves.
   const client = getOpenAIClient();
+  logger.info(
+    {
+      requestedType,
+      difficulty: params.difficulty,
+      chunkCount: params.chunks.length,
+      retryStrategy: params.retryContext?.strategy ?? "default"
+    },
+    "Question generation prompt prepared"
+  );
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -1042,7 +1095,6 @@ export async function generateQuestion(params: {
           rawJson !== null && typeof rawJson === "object" && !Array.isArray(rawJson)
             ? Object.keys(rawJson as object)
             : null,
-        rawPreview: rawText.slice(0, 600),
         error: normError instanceof Error ? normError.message : String(normError)
       },
       "Failed to normalise raw LLM question output"
@@ -1061,8 +1113,7 @@ export async function generateQuestion(params: {
       {
         requestedType,
         normalizedKeys: Object.keys(normalized),
-        error: citationError instanceof Error ? citationError.message : String(citationError),
-        rawPreview: rawText.slice(0, 600)
+        error: citationError instanceof Error ? citationError.message : String(citationError)
       },
       "Failed to align generated citation excerpts with source chunks"
     );
@@ -1079,8 +1130,7 @@ export async function generateQuestion(params: {
         validationErrors: parsed.error.issues.map((i) => ({
           path: i.path.join("."),
           message: i.message
-        })),
-        rawPreview: rawText.slice(0, 600)
+        }))
       },
       "Normalised question failed schema validation"
     );
