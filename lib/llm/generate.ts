@@ -373,7 +373,7 @@ function logTargetedVerifierRejection(params: {
  * Builds the ordered list of question types to generate.
  * Explicit typeMix always wins. Falls back to profile weights, then all-MCQ default.
  */
-function buildTypeSlots(
+export function buildTypeSlots(
   count: number,
   typeMix: TypeMix | null,
   profileDistribution: { MCQ?: number; SHORT_ANSWER?: number; TRUE_FALSE?: number } | null
@@ -492,6 +492,21 @@ export async function generateQuestions(params: {
   );
 
   const typeSlots = buildTypeSlots(params.count, params.typeMix ?? null, profileDistribution);
+  const resolvedTypeCounts = typeSlots.reduce(
+    (counts, questionType) => ({
+      ...counts,
+      [questionType]: counts[questionType] + 1
+    }),
+    { MCQ: 0, SHORT_ANSWER: 0, TRUE_FALSE: 0 } satisfies Record<QuestionTypeName, number>
+  );
+  logger.info(
+    {
+      ownerId: params.ownerId,
+      requestedCount: params.count,
+      resolvedTypeCounts
+    },
+    "Generation question type slots resolved"
+  );
 
   const results = [] as { questionId?: string; status: string; reason?: string }[];
 
@@ -680,6 +695,22 @@ export async function generateQuestions(params: {
       if (generated.verifierStatus === "INSUFFICIENT_EVIDENCE") {
         reason = "Insufficient evidence";
         retryMode = "refreshed_retrieval";
+        continue;
+      }
+
+      if (generated.type !== questionType) {
+        reason = `Generated ${generated.type} when ${questionType} was requested`;
+        retryMode = "same_chunks";
+        logger.warn(
+          {
+            ownerId: params.ownerId,
+            requestedQuestionType: questionType,
+            generatedQuestionType: generated.type,
+            attempt: attempt + 1,
+            retryMode
+          },
+          "Generated question type did not match requested slot"
+        );
         continue;
       }
 

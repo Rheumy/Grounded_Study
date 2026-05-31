@@ -46,7 +46,7 @@ vi.mock("@/lib/observability/logger", () => ({
 
 import { prisma } from "@/lib/db/prisma";
 import { generateQuestion } from "@/lib/llm/question-generator";
-import { generateQuestions } from "@/lib/llm/generate";
+import { buildTypeSlots, generateQuestions } from "@/lib/llm/generate";
 import { retrieveChunks } from "@/lib/retrieval/retrieve";
 import { verifyQuestion } from "@/lib/llm/verifier/verifier";
 
@@ -96,6 +96,23 @@ describe("generation retries", () => {
     (prisma.styleProfile.findFirst as any).mockResolvedValue(null);
     (prisma.question.create as any).mockResolvedValue({ id: "question-1" });
     (prisma.chunkUsage.createMany as any).mockResolvedValue({ count: 1 });
+  });
+
+  it("preserves TRUE_FALSE slots when resolving an explicit type mix", () => {
+    expect(buildTypeSlots(3, { MCQ: 1, TRUE_FALSE: 2 }, null).sort()).toEqual([
+      "MCQ",
+      "TRUE_FALSE",
+      "TRUE_FALSE"
+    ]);
+  });
+
+  it("includes MCQ and TRUE_FALSE slots for mixed objective generation", () => {
+    expect(buildTypeSlots(4, { MCQ: 2, SHORT_ANSWER: 0, TRUE_FALSE: 2 }, null).sort()).toEqual([
+      "MCQ",
+      "MCQ",
+      "TRUE_FALSE",
+      "TRUE_FALSE"
+    ]);
   });
 
   it("reuses the same retrieval when generation fails with malformed model output", async () => {
@@ -283,6 +300,38 @@ describe("generation retries", () => {
         optionsJson: ["True", "False"],
         answer: "True",
         rationale: "Oral nitisinone completely reverses urinary HGA excretion."
+      })
+    });
+    expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);
+  });
+
+  it("retries instead of saving MCQ when a TRUE_FALSE slot receives an MCQ response", async () => {
+    (retrieveChunks as any).mockResolvedValue([chunkA]);
+    (generateQuestion as any)
+      .mockResolvedValueOnce(buildGeneratedQuestion("chunk-a"))
+      .mockResolvedValueOnce(
+        buildGeneratedQuestion("chunk-a", {
+          type: "TRUE_FALSE",
+          options: ["True", "False"],
+          answer: "True"
+        })
+      );
+    (verifyQuestion as any).mockResolvedValue({ status: "PASSED", reason: "Supported" });
+
+    const results = await generateQuestions({
+      ownerId: "user-1",
+      documentIds: ["doc-1"],
+      styleProfileId: null,
+      difficulty: 2,
+      count: 1,
+      typeMix: { TRUE_FALSE: 1 }
+    });
+
+    expect(generateQuestion).toHaveBeenCalledTimes(2);
+    expect(verifyQuestion).toHaveBeenCalledTimes(1);
+    expect(prisma.question.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "TRUE_FALSE"
       })
     });
     expect(results).toEqual([{ questionId: "question-1", status: "PASSED" }]);

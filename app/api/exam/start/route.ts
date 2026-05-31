@@ -9,9 +9,12 @@ import {
   markQuestionsServed
 } from "@/lib/questions/exposure";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
+import { logger } from "@/lib/observability/logger";
 
 type ExamQuestionMix = "MCQ" | "TRUE_FALSE" | "MIXED";
 const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
+const QUESTION_MIX_ERROR =
+  "Choose Multiple choice, True/false, or Mixed before starting a mock exam.";
 
 const NEW_QUESTION_ORDER = [
   { createdAt: "desc" },
@@ -32,8 +35,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: SHORT_ANSWER_BETA_MESSAGE }, { status: 400 });
   }
 
-  const questionMix: ExamQuestionMix =
-    body.questionMix === "TRUE_FALSE" || body.questionMix === "MIXED" ? body.questionMix : "MCQ";
+  const questionMix = body.questionMix as ExamQuestionMix | undefined;
+  if (questionMix !== "MCQ" && questionMix !== "TRUE_FALSE" && questionMix !== "MIXED") {
+    return NextResponse.json({ error: QUESTION_MIX_ERROR }, { status: 400 });
+  }
   const hiddenQuestionIds = Array.isArray(body.hiddenQuestionIds)
     ? body.hiddenQuestionIds.filter(
         (value: unknown): value is string => typeof value === "string" && value.trim().length > 0
@@ -111,6 +116,15 @@ export async function POST(request: Request) {
         });
 
   if (questions.length === 0) {
+    logger.info(
+      {
+        userId: user.id,
+        requestedQuestionMix: body.questionMix,
+        resolvedQuestionMix: questionMix,
+        count: 0
+      },
+      "Mock exam question lookup completed"
+    );
     return NextResponse.json(
       {
         error:
@@ -121,6 +135,15 @@ export async function POST(request: Request) {
   }
 
   if (questions.length < count) {
+    logger.info(
+      {
+        userId: user.id,
+        requestedQuestionMix: body.questionMix,
+        resolvedQuestionMix: questionMix,
+        count: questions.length
+      },
+      "Mock exam question lookup completed"
+    );
     return NextResponse.json(
       {
         error: `You only have ${questions.length} new question${questions.length === 1 ? "" : "s"} available for this mock exam. Generate more questions or reduce the number of questions.`
@@ -167,6 +190,16 @@ export async function POST(request: Request) {
       ? (question.optionsJson as string[]).map((option) => sanitizeFeedbackText(option))
       : []
   }));
+
+  logger.info(
+    {
+      userId: user.id,
+      requestedQuestionMix: body.questionMix,
+      resolvedQuestionMix: questionMix,
+      count: questions.length
+    },
+    "Mock exam question lookup completed"
+  );
 
   return NextResponse.json({
     sessionId: session.id,

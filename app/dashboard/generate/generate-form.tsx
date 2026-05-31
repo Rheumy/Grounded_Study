@@ -17,6 +17,11 @@ type GenerationJobProgress = {
   currentPhase: string | null;
   passedCount: number;
   requestedCount: number;
+  savedTypeCounts: {
+    MCQ: number;
+    TRUE_FALSE: number;
+    SHORT_ANSWER: number;
+  };
   errorMessage: string | null;
   completedAt: string | null;
 };
@@ -217,6 +222,7 @@ export function GenerateForm({
         currentPhase: "Waiting to start",
         passedCount: 0,
         requestedCount: count,
+        savedTypeCounts: { MCQ: 0, TRUE_FALSE: 0, SHORT_ANSWER: 0 },
         errorMessage: null,
         completedAt: null
       });
@@ -385,6 +391,12 @@ export function GenerateForm({
               {lastCompletedJob.passedCount}{" "}
               {lastCompletedJob.passedCount === 1 ? "question is" : "questions are"} ready.
             </p>
+            {lastCompletedJob.passedCount > 0 ? (
+              <p className="text-xs text-ink/60">
+                Saved: {lastCompletedJob.savedTypeCounts.MCQ} multiple choice,{" "}
+                {lastCompletedJob.savedTypeCounts.TRUE_FALSE} true/false.
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">

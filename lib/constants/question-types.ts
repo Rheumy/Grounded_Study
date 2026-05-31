@@ -14,3 +14,35 @@ export function isVisibleQuestionType(value: string): value is VisibleQuestionTy
   return VISIBLE_QUESTION_TYPES.includes(value as VisibleQuestionType);
 }
 
+export function normalizeQuestionType(value: unknown): QuestionType | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase().replace(/[-\s/]+/g, "_");
+
+  if (normalized === "MULTIPLE_CHOICE" || normalized === "MULTIPLE_CHOICE_QUESTION") {
+    return "MCQ";
+  }
+
+  if (
+    normalized === "SHORTANSWER" ||
+    normalized === "SHORT_ANSWER_QUESTION" ||
+    normalized === "OPEN_ENDED"
+  ) {
+    return "SHORT_ANSWER";
+  }
+
+  if (
+    normalized === "TRUEFALSE" ||
+    normalized === "TRUE_FALSE_QUESTION" ||
+    normalized === "T_F" ||
+    normalized === "TF"
+  ) {
+    return "TRUE_FALSE";
+  }
+
+  return ALL_QUESTION_TYPES.includes(normalized as QuestionType)
+    ? (normalized as QuestionType)
+    : null;
+}

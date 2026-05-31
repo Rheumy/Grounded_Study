@@ -5,12 +5,15 @@ import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
 
 function serializeJob(job: {
   id: string;
+  userId: string;
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
   currentPhase: string | null;
   passedCount: number;
   requestedCount: number;
   errorMessage: string | null;
+  startedAt: Date | null;
   completedAt: Date | null;
+  savedTypeCounts?: { MCQ: number; TRUE_FALSE: number; SHORT_ANSWER: number };
 }) {
   return {
     jobId: job.id,
@@ -18,6 +21,7 @@ function serializeJob(job: {
     currentPhase: job.currentPhase,
     passedCount: job.passedCount,
     requestedCount: job.requestedCount,
+    savedTypeCounts: job.savedTypeCounts ?? { MCQ: 0, TRUE_FALSE: 0, SHORT_ANSWER: 0 },
     errorMessage: job.errorMessage ? sanitizeGenerationErrorMessage(job.errorMessage) : null,
     completedAt: job.completedAt?.toISOString() ?? null
   };
@@ -34,11 +38,13 @@ export async function GET(request: Request) {
 
   const select = {
     id: true,
+    userId: true,
     status: true,
     currentPhase: true,
     passedCount: true,
     requestedCount: true,
     errorMessage: true,
+    startedAt: true,
     completedAt: true
   } as const;
 
@@ -62,5 +68,31 @@ export async function GET(request: Request) {
     return NextResponse.json({ job: null }, { status: jobId ? 404 : 200 });
   }
 
-  return NextResponse.json(serializeJob(job));
+  const savedTypeCounts = {
+    MCQ: 0,
+    TRUE_FALSE: 0,
+    SHORT_ANSWER: 0
+  };
+  if (job.startedAt && job.completedAt) {
+    const rows = await prisma.question.groupBy({
+      by: ["type"],
+      where: {
+        ownerId: user.id,
+        verifierStatus: "PASSED",
+        createdAt: {
+          gte: job.startedAt,
+          lte: job.completedAt
+        }
+      },
+      _count: {
+        _all: true
+      }
+    });
+
+    for (const row of rows) {
+      savedTypeCounts[row.type] = row._count._all;
+    }
+  }
+
+  return NextResponse.json(serializeJob({ ...job, savedTypeCounts }));
 }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import {
   VISIBLE_QUESTION_TYPES,
   isVisibleQuestionType,
+  normalizeQuestionType,
   type QuestionType
 } from "@/lib/constants/question-types";
 import {
@@ -14,6 +15,7 @@ import {
   markQuestionsServed
 } from "@/lib/questions/exposure";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
+import { logger } from "@/lib/observability/logger";
 
 const RECYCLE_MODES = ["NONE", "DUE", "INCORRECT", "ALL"] as const;
 const SHORT_ANSWER_BETA_MESSAGE = "Short-answer questions are not available in this beta yet.";
@@ -53,8 +55,9 @@ type PracticeQuestionDto = {
 };
 
 function parseQuestionType(value: string | null): QuestionTypeFilter {
-  if (value && isVisibleQuestionType(value)) {
-    return value;
+  const normalized = normalizeQuestionType(value);
+  if (normalized && isVisibleQuestionType(normalized)) {
+    return normalized;
   }
 
   return "ALL";
@@ -323,6 +326,16 @@ export async function GET(request: Request) {
   }
 
   if (!question) {
+    logger.info(
+      {
+        userId: user.id,
+        requestedQuestionType: searchParams.get("questionType"),
+        resolvedQuestionType: questionType,
+        recycleMode,
+        count: 0
+      },
+      "Practice question lookup completed"
+    );
     return NextResponse.json({
       question: null,
       message: buildEmptyMessage(questionType, recycleMode)
@@ -334,6 +347,17 @@ export async function GET(request: Request) {
     questionIds: [question.id],
     mode: "PRACTICE"
   });
+
+  logger.info(
+    {
+      userId: user.id,
+      requestedQuestionType: searchParams.get("questionType"),
+      resolvedQuestionType: questionType,
+      recycleMode,
+      count: 1
+    },
+    "Practice question lookup completed"
+  );
 
   return NextResponse.json({
     question: toPracticeQuestionDto(question),
