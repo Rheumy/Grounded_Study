@@ -8,6 +8,11 @@ import {
   VISIBLE_QUESTION_TYPES,
   type VisibleQuestionType
 } from "@/lib/constants/question-types";
+import {
+  buildGenerationSummary,
+  canPracticeGeneratedQuestions,
+  type GenerationOutcome
+} from "@/lib/generation/job-outcome";
 
 type Doc = { id: string; title: string };
 type GenerationJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
@@ -17,6 +22,8 @@ type GenerationJobProgress = {
   currentPhase: string | null;
   passedCount: number;
   requestedCount: number;
+  failedCount: number;
+  outcome: GenerationOutcome;
   savedTypeCounts: {
     MCQ: number;
     TRUE_FALSE: number;
@@ -100,19 +107,28 @@ export function GenerateForm({
     setLoading(nextProgress.status === "PENDING" || nextProgress.status === "PROCESSING");
 
     if (nextProgress.status === "FAILED") {
-      setError(nextProgress.errorMessage ?? "Generation failed. Please try again.");
+      setLastCompletedJob(null);
+      setError(
+        nextProgress.passedCount > 0
+          ? null
+          : nextProgress.errorMessage ?? "Generation failed. Please try again."
+      );
       setStatus(null);
       return;
     }
 
     if (nextProgress.status === "COMPLETED") {
       setLastCompletedJob(nextProgress);
+      setError(null);
       setStatus(
-        nextProgress.passedCount > 0
-          ? "Your last generation completed."
-          : "No valid questions were saved."
+        canPracticeGeneratedQuestions(nextProgress)
+          ? buildGenerationSummary(nextProgress)
+          : null
       );
-      if (nextProgress.passedCount > 0 && completedNavigationRef.current !== nextProgress.jobId) {
+      if (
+        canPracticeGeneratedQuestions(nextProgress) &&
+        completedNavigationRef.current !== nextProgress.jobId
+      ) {
         completedNavigationRef.current = nextProgress.jobId;
         router.push("/dashboard/practice");
       }
@@ -134,14 +150,17 @@ export function GenerateForm({
       if (progress.status === "PENDING" || progress.status === "PROCESSING") {
         setJobProgress(progress);
         setLoading(true);
+        setError(null);
         setStatus("Resuming your in-progress generation.");
       } else if (progress.status === "COMPLETED") {
-        setLastCompletedJob(null);
+        setJobProgress(progress);
+        setLastCompletedJob(canPracticeGeneratedQuestions(progress) ? progress : null);
+        setError(null);
         setStatus(null);
       } else if (progress.status === "FAILED") {
         setJobProgress(progress);
         setLoading(false);
-        setError(progress.errorMessage ?? "Generation failed. Please try again.");
+        setError(null);
         setStatus(null);
       }
     }
@@ -226,6 +245,8 @@ export function GenerateForm({
         currentPhase: "Waiting to start",
         passedCount: 0,
         requestedCount: count,
+        failedCount: 0,
+        outcome: "PENDING",
         savedTypeCounts: { MCQ: 0, TRUE_FALSE: 0, SHORT_ANSWER: 0 },
         errorMessage: null,
         completedAt: null
@@ -386,16 +407,15 @@ export function GenerateForm({
       {lastCompletedJob && !activeProgress ? (
         <div className="space-y-3 rounded-lg border border-accent/20 bg-accent/[0.05] p-4">
           <div className="space-y-1">
-            {lastCompletedJob.passedCount > 0 ? (
+            {canPracticeGeneratedQuestions(lastCompletedJob) ? (
               <p className="text-sm font-semibold text-ink">Your question bank has been updated.</p>
             ) : (
               <p className="text-sm font-semibold text-ink">No new questions were added.</p>
             )}
             <p className="text-sm text-ink/70">
-              {lastCompletedJob.passedCount}{" "}
-              {lastCompletedJob.passedCount === 1 ? "question is" : "questions are"} ready.
+              {buildGenerationSummary(lastCompletedJob)}
             </p>
-            {lastCompletedJob.passedCount > 0 ? (
+            {canPracticeGeneratedQuestions(lastCompletedJob) ? (
               <p className="text-xs text-ink/60">
                 Saved: {lastCompletedJob.savedTypeCounts.MCQ} multiple choice,{" "}
                 {lastCompletedJob.savedTypeCounts.TRUE_FALSE} true/false.
@@ -404,19 +424,19 @@ export function GenerateForm({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {lastCompletedJob.passedCount > 0 ? (
+            {canPracticeGeneratedQuestions(lastCompletedJob) ? (
               <Button type="button" onClick={() => router.push("/dashboard/practice")}>
                 Practise these questions
               </Button>
             ) : null}
-            {lastCompletedJob.passedCount > 0 ? (
+            {canPracticeGeneratedQuestions(lastCompletedJob) ? (
               <Button type="button" variant="outline" onClick={() => router.push("/dashboard/exam")}>
                 Start a mock exam
               </Button>
             ) : null}
             <Button
               type="button"
-              variant={lastCompletedJob.passedCount > 0 ? "outline" : "default"}
+              variant={canPracticeGeneratedQuestions(lastCompletedJob) ? "outline" : "default"}
               onClick={() => {
                 setLastCompletedJob(null);
                 setJobProgress(null);

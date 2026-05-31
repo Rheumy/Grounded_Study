@@ -210,7 +210,10 @@ export async function processGenerationJob(jobId: string) {
       data: {
         status: "COMPLETED",
         passedCount,
-        currentPhase: "Generation complete",
+        currentPhase:
+          passedCount < job.requestedCount
+            ? `Generation complete: ${passedCount} of ${job.requestedCount} saved`
+            : "Generation complete",
         completedAt: new Date(),
         errorMessage: null
       }

@@ -89,4 +89,32 @@ describe("generation job processor", () => {
       })
     });
   });
+
+  it("marks a partially saved generation job as completed with partial progress", async () => {
+    (prisma.generationJob.findUnique as any).mockResolvedValue({
+      ...generationJob,
+      requestedCount: 5
+    });
+    (generateQuestions as any).mockResolvedValue([
+      { questionId: "question-1", status: "PASSED" },
+      { status: "INSUFFICIENT_EVIDENCE", reason: "Verifier rejected true/false item" },
+      { status: "INSUFFICIENT_EVIDENCE", reason: "Verifier rejected true/false item" },
+      { status: "INSUFFICIENT_EVIDENCE", reason: "Verifier rejected true/false item" },
+      { status: "INSUFFICIENT_EVIDENCE", reason: "Verifier rejected true/false item" }
+    ]);
+
+    await processGenerationJob("job-1");
+
+    expect(incrementUsage).toHaveBeenCalledWith({ userId: "user-1", questions: 1 });
+    expect(prisma.generationJob.update).toHaveBeenCalledWith({
+      where: { id: "job-1" },
+      data: expect.objectContaining({
+        status: "COMPLETED",
+        passedCount: 1,
+        currentPhase: "Generation complete: 1 of 5 saved",
+        errorMessage: null,
+        completedAt: expect.any(Date)
+      })
+    });
+  });
 });
