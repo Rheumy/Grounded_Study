@@ -230,14 +230,18 @@ function findNearCopyEducationalFailure(params: {
     const commonRun = longestCommonTokenRun(params.question.stem, sourceText);
     const similarLength =
       Math.abs(stemTokens.length - sourceTokens.length) / Math.max(stemTokens.length, sourceTokens.length);
+    const hasTransform = hasTrueFalseTransformSignal(params.question.stem);
     const nearSentenceCopy = overlap >= 0.82 && similarLength <= 0.35;
-    const copiedPhrase = commonRun >= 8 && overlap >= 0.72;
+    const copiedPhrase =
+      params.question.type === "TRUE_FALSE"
+        ? commonRun >= 10 && overlap >= 0.9 && !hasTransform
+        : commonRun >= 8 && overlap >= 0.72;
     const trueFalseRestatement =
       params.question.type === "TRUE_FALSE" &&
       overlap >= 0.82 &&
       commonRun >= 5 &&
       similarLength <= 0.5 &&
-      !hasTrueFalseTransformSignal(params.question.stem);
+      !hasTransform;
 
     if (nearSentenceCopy || copiedPhrase || trueFalseRestatement) {
       return {
@@ -248,7 +252,7 @@ function findNearCopyEducationalFailure(params: {
             : "Question stem is too close to the cited source wording to be educationally useful",
         failureCodes:
           params.question.type === "TRUE_FALSE"
-            ? ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+            ? ["LOW_EDUCATIONAL_VALUE"]
             : ["LOW_EDUCATIONAL_VALUE"],
         confidence: "HIGH"
       };
@@ -483,7 +487,10 @@ function assignOutsiderSignalCode(result: VerifierResult): VerifierResult {
   return {
     ...result,
     failureCodes: ensureFailureCode(
-      removeFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+      removeFailureCode(
+        removeFailureCode(result.failureCodes ?? [], "LOW_EDUCATIONAL_VALUE"),
+        "INVALID_TRUE_FALSE"
+      ),
       "OUTSIDER_SOLVABLE"
     )
   };
@@ -679,7 +686,7 @@ function findHighDifficultyTrueFalseFailure(question: GeneratedQuestion): Verifi
       status: "FAILED",
       reason:
         "High-difficulty true/false item uses an obvious negation trap rather than a grounded source-specific distinction",
-      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      failureCodes: ["LOW_EDUCATIONAL_VALUE"],
       confidence: "HIGH"
     };
   }
@@ -693,7 +700,7 @@ function findHighDifficultyTrueFalseFailure(question: GeneratedQuestion): Verifi
       status: "FAILED",
       reason:
         "High-difficulty true/false item is too broad or obvious and does not depend on a meaningful grounded qualifier, exception, mechanism, caveat, timing detail, or distinction",
-      failureCodes: ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"],
+      failureCodes: ["LOW_EDUCATIONAL_VALUE"],
       confidence: "MEDIUM"
     };
   }
@@ -769,7 +776,7 @@ function findOutsiderHeuristicFailure(params: {
     return {
       status: "FAILED",
       reason,
-      failureCodes: ["OUTSIDER_SOLVABLE", "INVALID_TRUE_FALSE"],
+      failureCodes: ["OUTSIDER_SOLVABLE"],
       confidence: "MEDIUM"
     };
   }
@@ -909,10 +916,7 @@ function enforceTrueFalseAnswerSupport(params: {
     ...params.result,
     status: "FAILED",
     reason,
-    failureCodes: ensureFailureCodes(params.result.failureCodes ?? [], [
-      "UNSUPPORTED_ANSWER",
-      "INVALID_TRUE_FALSE"
-    ]),
+    failureCodes: ensureFailureCode(params.result.failureCodes ?? [], "UNSUPPORTED_ANSWER"),
     confidence: params.result.confidence ?? "HIGH"
   };
 }
@@ -927,9 +931,15 @@ function enforceTrueFalseEducationalHardFailures(params: {
 
   const reason = params.result.reason.toLowerCase();
   const failureCodes = params.result.failureCodes ?? [];
+  const onlyOutsiderSignal =
+    failureCodes.length > 0 &&
+    failureCodes.every((failureCode) => failureCode === "OUTSIDER_SOLVABLE");
+  if (onlyOutsiderSignal) {
+    return params.result;
+  }
+
   const hasLowValueSignal =
     failureCodes.includes("LOW_EDUCATIONAL_VALUE") ||
-    failureCodes.includes("OUTSIDER_SOLVABLE") ||
     /broad|field[- ]general|guess|headline|summary|telegraph|without (?:reading|studying)|wording/.test(
       reason
     );
@@ -940,11 +950,43 @@ function enforceTrueFalseEducationalHardFailures(params: {
 
   return {
     ...params.result,
-    failureCodes: ensureFailureCodes(failureCodes, [
-      "LOW_EDUCATIONAL_VALUE",
-      "INVALID_TRUE_FALSE"
-    ]),
+    failureCodes: ensureFailureCode(failureCodes, "LOW_EDUCATIONAL_VALUE"),
     confidence: params.result.confidence ?? "MEDIUM"
+  };
+}
+
+function findTrueFalseStructuralFailure(question: GeneratedQuestion): VerifierResult | null {
+  if (question.type !== "TRUE_FALSE") {
+    return null;
+  }
+
+  const options = Array.isArray(question.options) ? question.options : [];
+  const optionsValid =
+    options.length === 2 && options.includes("True") && options.includes("False");
+  const answerValid = question.answer === "True" || question.answer === "False";
+  const stem = normalizeSpace(question.stem);
+  const stemLooksDeclarative = stem.length >= 10 && !/\?$/.test(stem);
+
+  logger.info(
+    {
+      questionType: question.type,
+      optionsValid,
+      optionsCount: options.length,
+      answerValid,
+      stemLooksDeclarative
+    },
+    "TRUE_FALSE structural validation completed"
+  );
+
+  if (optionsValid && answerValid && stemLooksDeclarative) {
+    return null;
+  }
+
+  return {
+    status: "FAILED",
+    reason: "True/false item has invalid structure",
+    failureCodes: ["INVALID_TRUE_FALSE", "INVALID_STRUCTURE"],
+    confidence: "HIGH"
   };
 }
 
@@ -986,6 +1028,21 @@ export async function verifyQuestion(params: {
       "Verifier rejected near-copy low-educational-value question before LLM review"
     );
     return nearCopyFailure;
+  }
+
+  const trueFalseStructuralFailure = findTrueFalseStructuralFailure(params.question);
+  if (trueFalseStructuralFailure) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        failureCodes: trueFalseStructuralFailure.failureCodes ?? [],
+        reason: trueFalseStructuralFailure.reason,
+        questionId: params.questionId ?? null,
+        userId: params.userId ?? null
+      },
+      "Verifier rejected malformed true/false question before LLM review"
+    );
+    return trueFalseStructuralFailure;
   }
 
   const highDifficultyTrueFalseFailure = findHighDifficultyTrueFalseFailure(params.question);
@@ -1190,12 +1247,16 @@ export async function verifyQuestion(params: {
     result = enforceTrueFalseEducationalHardFailures({ question: params.question, result });
   }
 
-  if (highRigorRequested && looksLowDepthForHighRigor(params.question)) {
+  if (
+    highRigorRequested &&
+    looksLowDepthForHighRigor(params.question) &&
+    (params.question.type !== "TRUE_FALSE" || params.question.difficulty >= 4)
+  ) {
     const extraFailureCodes: FailureCode[] =
       params.question.type === "MCQ"
         ? ["LOW_EDUCATIONAL_VALUE", "WEAK_DISTRACTORS"]
         : params.question.type === "TRUE_FALSE"
-          ? ["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"]
+          ? ["LOW_EDUCATIONAL_VALUE"]
           : ["LOW_EDUCATIONAL_VALUE"];
     result = {
       status: "FAILED",

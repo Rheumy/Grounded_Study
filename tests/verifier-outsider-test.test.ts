@@ -46,7 +46,7 @@ describe("verifier outsider test", () => {
     });
   });
 
-  it("rejects broad true/false statements that a specialist-level outsider could answer without the source", async () => {
+  it("does not reject a source-grounded true/false item solely for outsider-solvable concern", async () => {
     const result = await verifyQuestion({
       question: {
         type: "TRUE_FALSE",
@@ -78,10 +78,8 @@ describe("verifier outsider test", () => {
       }
     });
 
-    expect(result.status).toBe("FAILED");
-    expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["OUTSIDER_SOLVABLE", "INVALID_TRUE_FALSE"])
-    );
+    expect(result.status).toBe("PASSED");
+    expect(result.failureCodes ?? []).not.toContain("INVALID_TRUE_FALSE");
   });
 
   it("rejects copied true/false stems before LLM review", async () => {
@@ -120,9 +118,51 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE"])
     );
+    expect(result.failureCodes ?? []).not.toContain("INVALID_TRUE_FALSE");
     expect(result.reason).toContain("too close to the cited source wording");
+    expect(createCompletion).not.toHaveBeenCalled();
+  });
+
+  it("labels malformed true/false structure as INVALID_TRUE_FALSE", async () => {
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Which option best describes the cited seed-region requirement?",
+        options: ["Seed region", "PAM", "Distal guide", "Cas9"],
+        answer: "Seed region",
+        rationale:
+          "The cited material states that efficient cleavage required seed-region complementarity near the PAM.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM",
+            page: 1
+          }
+        ],
+        difficulty: 2,
+        verifierStatus: "PENDING"
+      } as any,
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("FAILED");
+    expect(result.failureCodes).toEqual(
+      expect.arrayContaining(["INVALID_TRUE_FALSE", "INVALID_STRUCTURE"])
+    );
     expect(createCompletion).not.toHaveBeenCalled();
   });
 
@@ -319,8 +359,9 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE"])
     );
+    expect(result.failureCodes ?? []).not.toContain("INVALID_TRUE_FALSE");
     expect(createCompletion).not.toHaveBeenCalled();
   });
 
@@ -358,8 +399,9 @@ describe("verifier outsider test", () => {
 
     expect(result.status).toBe("FAILED");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE", "INVALID_TRUE_FALSE"])
+      expect.arrayContaining(["LOW_EDUCATIONAL_VALUE"])
     );
+    expect(result.failureCodes ?? []).not.toContain("INVALID_TRUE_FALSE");
   });
 
   it("allows grounded true/false items at difficulty 2 when they depend on source detail", async () => {
@@ -403,6 +445,58 @@ describe("verifier outsider test", () => {
           id: "chunk-1",
           content:
             "IL-23 blockade reduced relapse within 12 weeks compared with placebo in the studied cohort.",
+          page: 4
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
+  it("allows source-grounded false true/false items", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "Supported",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "False"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Distal guide mismatches completely prevented cleavage in the described system.",
+        options: ["True", "False"],
+        answer: "False",
+        rationale:
+          "The cited material says some distal guide mismatches were tolerated, so they did not completely prevent cleavage.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt: "some distal guide mismatches were tolerated",
+            page: 4
+          }
+        ],
+        difficulty: 2,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
           page: 4
         }
       ],
@@ -730,8 +824,9 @@ describe("verifier outsider test", () => {
     expect(result.status).toBe("FAILED");
     expect(result.reason).toContain("supports True, not the keyed answer False");
     expect(result.failureCodes).toEqual(
-      expect.arrayContaining(["UNSUPPORTED_ANSWER", "INVALID_TRUE_FALSE"])
+      expect.arrayContaining(["UNSUPPORTED_ANSWER"])
     );
+    expect(result.failureCodes ?? []).not.toContain("INVALID_TRUE_FALSE");
   });
 
   it("does not auto-reject a familiar topic in generalist mode when the exact claim depends on a narrower source detail", async () => {
