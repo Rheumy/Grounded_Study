@@ -1087,6 +1087,18 @@ export async function generateQuestion(params: {
   let normalized: Record<string, unknown>;
   try {
     normalized = normalizeRawQuestion(rawJson, requestedType, params.difficulty);
+    logger.info(
+      {
+        requestedType,
+        returnedType: normalized.type,
+        optionsPresent: Array.isArray(normalized.options),
+        optionsCount: Array.isArray(normalized.options) ? normalized.options.length : 0,
+        normalizedAnswer: normalized.answer,
+        stemPreview:
+          typeof normalized.stem === "string" ? normalized.stem.slice(0, 120) : null
+      },
+      "Raw LLM question output normalised"
+    );
   } catch (normError) {
     logger.warn(
       {

@@ -179,6 +179,111 @@ describe("verifier outsider test", () => {
     expect(result.status).toBe("PASSED");
   });
 
+  it("does not reject a passed TRUE_FALSE verifier response solely because supportedAnswer is omitted", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "The cited evidence supports the keyed truth value.",
+              failureCodes: [],
+              confidence: "HIGH"
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Because the PAM-proximal seed match was the required feature, errors farther from the PAM did not automatically prevent cleavage.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The evidence makes seed-region complementarity near the PAM the required feature while noting that some distal guide mismatches were tolerated.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
+  it("normalizes sentence-form supportedAnswer values for TRUE_FALSE verification", async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              status: "PASSED",
+              reason: "The cited evidence supports the keyed truth value.",
+              failureCodes: [],
+              confidence: "HIGH",
+              supportedAnswer: "The statement is true."
+            })
+          }
+        }
+      ]
+    });
+
+    const result = await verifyQuestion({
+      question: {
+        type: "TRUE_FALSE",
+        stem:
+          "Because the PAM-proximal seed match was the required feature, errors farther from the PAM did not automatically prevent cleavage.",
+        options: ["True", "False"],
+        answer: "True",
+        rationale:
+          "The evidence makes seed-region complementarity near the PAM the required feature while noting that some distal guide mismatches were tolerated.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+            page: 1
+          }
+        ],
+        difficulty: 3,
+        verifierStatus: "PENDING"
+      },
+      chunks: [
+        {
+          id: "chunk-1",
+          content:
+            "Efficient cleavage required seed-region complementarity near the PAM, whereas some distal guide mismatches were tolerated.",
+          page: 1
+        }
+      ],
+      styleProfile: {
+        assumedBackgroundLevel: "generalist"
+      }
+    });
+
+    expect(result.status).toBe("PASSED");
+  });
+
   it("rejects generic non-observation adverse-effect negation traps at difficulty 5", async () => {
     const result = await verifyQuestion({
       question: {

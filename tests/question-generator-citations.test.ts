@@ -122,6 +122,39 @@ describe("question generator citation handling", () => {
     });
   });
 
+  it("normalizes boolean TRUE_FALSE answers into canonical strings", async () => {
+    createCompletionMock.mockResolvedValueOnce(
+      buildResponse({
+        type: "TRUE_FALSE",
+        stem: "IL-23 blockade did not reduce relapse within 12 weeks compared with placebo.",
+        options: [true, false],
+        answer: false,
+        rationale:
+          "The cited evidence states that IL-23 blockade reduced relapse within 12 weeks compared with placebo.",
+        citations: [
+          {
+            chunkId: "chunk-1",
+            excerpt:
+              "IL-23 blockade reduced relapse\nwithin 12 weeks compared with placebo",
+            page: 4
+          }
+        ],
+        difficulty: 3
+      })
+    );
+
+    const result = await generateQuestion({
+      styleProfile: { assumedBackgroundLevel: "generalist" },
+      difficulty: 3,
+      questionType: "TRUE_FALSE",
+      chunks: [baseChunk]
+    });
+
+    expect(result.type).toBe("TRUE_FALSE");
+    expect(result.options).toEqual(["True", "False"]);
+    expect(result.answer).toBe("False");
+  });
+
   it("adds TRUE_FALSE-specific retry guidance after a wrong-type response", async () => {
     createCompletionMock.mockResolvedValueOnce(
       buildResponse({

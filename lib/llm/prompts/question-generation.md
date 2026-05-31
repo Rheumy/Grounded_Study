@@ -430,6 +430,21 @@ Return a single flat JSON object with these exact top-level fields:
 - `tags` (optional)
 - `verifierStatus`
 
+Minimal TRUE_FALSE shape example:
+```json
+{
+  "type": "TRUE_FALSE",
+  "stem": "The declarative statement being tested belongs here.",
+  "options": ["True", "False"],
+  "answer": "True",
+  "rationale": "Explain why the keyed truth value follows from the cited evidence.",
+  "citations": [{ "chunkId": "chunk-id", "excerpt": "short exact quote", "page": null }],
+  "difficulty": 3,
+  "tags": ["topic"],
+  "verifierStatus": "PENDING"
+}
+```
+
 Allowed `verifierStatus` values:
 - `"PENDING"`
 - `"INSUFFICIENT_EVIDENCE"`

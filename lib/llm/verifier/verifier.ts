@@ -841,14 +841,24 @@ function normalizeVerifierResponse(raw: unknown): VerifierResult {
       ? rawConfidence
       : undefined;
   const rawSupportedAnswer = String(
-    obj.supportedAnswer ?? obj.supported_answer ?? obj.evidenceSupportedAnswer ?? ""
+    obj.supportedAnswer ??
+      obj.supported_answer ??
+      obj.evidenceSupportedAnswer ??
+      obj.evidence_supported_answer ??
+      obj.truthValue ??
+      obj.truth_value ??
+      ""
   )
     .trim()
     .toLowerCase();
   const supportedAnswer =
-    rawSupportedAnswer === "true"
+    rawSupportedAnswer === "true" ||
+    /^true\b/.test(rawSupportedAnswer) ||
+    /^the (?:statement|proposition|claim) is true\.?$/.test(rawSupportedAnswer)
       ? "True"
-      : rawSupportedAnswer === "false"
+      : rawSupportedAnswer === "false" ||
+          /^false\b/.test(rawSupportedAnswer) ||
+          /^the (?:statement|proposition|claim) is false\.?$/.test(rawSupportedAnswer)
         ? "False"
         : rawSupportedAnswer === "null" || rawSupportedAnswer === "unknown" || rawSupportedAnswer === ""
           ? null
@@ -872,6 +882,21 @@ function enforceTrueFalseAnswerSupport(params: {
   }
 
   if (params.result.supportedAnswer === params.question.answer) {
+    return params.result;
+  }
+
+  if (
+    params.result.supportedAnswer == null &&
+    (params.result.failureCodes ?? []).length === 0
+  ) {
+    logger.info(
+      {
+        questionType: params.question.type,
+        keyedAnswer: params.question.answer,
+        verifierStatus: params.result.status
+      },
+      "TRUE_FALSE verifier passed without explicit supportedAnswer"
+    );
     return params.result;
   }
 

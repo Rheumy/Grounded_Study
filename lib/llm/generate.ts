@@ -792,6 +792,16 @@ export async function generateQuestions(params: {
 
       if (verifier.status === "FAILED") {
         reason = verifier.reason;
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            questionType,
+            attempt: attempt + 1,
+            failureCodes: verifier.failureCodes ?? [],
+            reason: verifier.reason
+          },
+          "Verifier rejected generated question"
+        );
         const outsiderStyleRejection = isOutsiderStyleRejection({
           reason: verifier.reason,
           failureCodes: verifier.failureCodes
