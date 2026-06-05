@@ -33,6 +33,8 @@ type GenerationJobProgress = {
   completedAt: string | null;
 };
 
+const GENERATION_POLL_TIMEOUT_MS = 12 * 60 * 1000;
+
 const difficultyOptions = [
   { value: 1, label: "Easy" },
   { value: 2, label: "Moderate" },
@@ -61,6 +63,7 @@ export function GenerateForm({
     "MCQ"
   ]);
   const completedNavigationRef = useRef<string | null>(null);
+  const pollStartedAtRef = useRef<number | null>(null);
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -114,17 +117,15 @@ export function GenerateForm({
           : nextProgress.errorMessage ?? "Generation failed. Please try again."
       );
       setStatus(null);
+      setLoading(false);
       return;
     }
 
     if (nextProgress.status === "COMPLETED") {
       setLastCompletedJob(nextProgress);
       setError(null);
-      setStatus(
-        canPracticeGeneratedQuestions(nextProgress)
-          ? buildGenerationSummary(nextProgress)
-          : null
-      );
+      setStatus(buildGenerationSummary(nextProgress));
+      setLoading(false);
       if (
         canPracticeGeneratedQuestions(nextProgress) &&
         completedNavigationRef.current !== nextProgress.jobId
@@ -150,13 +151,15 @@ export function GenerateForm({
       if (progress.status === "PENDING" || progress.status === "PROCESSING") {
         setJobProgress(progress);
         setLoading(true);
+        pollStartedAtRef.current = Date.now();
         setError(null);
         setStatus("Resuming your in-progress generation.");
       } else if (progress.status === "COMPLETED") {
         setJobProgress(progress);
-        setLastCompletedJob(canPracticeGeneratedQuestions(progress) ? progress : null);
+        setLastCompletedJob(progress);
+        setLoading(false);
         setError(null);
-        setStatus(null);
+        setStatus(buildGenerationSummary(progress));
       } else if (progress.status === "FAILED") {
         setJobProgress(progress);
         setLoading(false);
@@ -179,6 +182,19 @@ export function GenerateForm({
 
     let cancelled = false;
     const runPoll = async () => {
+      if (
+        pollStartedAtRef.current !== null &&
+        Date.now() - pollStartedAtRef.current > GENERATION_POLL_TIMEOUT_MS
+      ) {
+        setLoading(false);
+        setError(
+          "This generation is taking longer than expected. You can refresh this page or check Practice for saved questions."
+        );
+        setStatus(null);
+        setJobProgress(null);
+        return;
+      }
+
       try {
         await pollJob(jobProgress.jobId);
       } catch {
@@ -209,6 +225,7 @@ export function GenerateForm({
     }
     setLoading(true);
     setJobProgress(null);
+    pollStartedAtRef.current = Date.now();
     setStatus("Starting generation...");
     try {
       const response = await fetch("/api/questions/generate", {

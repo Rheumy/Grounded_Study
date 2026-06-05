@@ -37,15 +37,15 @@ export function buildGenerationSummary(params: {
   const failedCount = getGenerationFailedCount(params);
 
   if (params.passedCount <= 0) {
-    return "No valid questions were saved. Please try again with a smaller or more focused source.";
+    return "No questions could be generated from the available material. Try a smaller request or upload more specific study material.";
   }
 
-  const questionText = params.passedCount === 1 ? "question was" : "questions were";
+  const questionText = params.passedCount === 1 ? "question generated" : "questions generated";
   if (failedCount > 0) {
-    return `${params.passedCount} ${questionText} saved. Some generated candidates were rejected during verification.`;
+    return `${params.passedCount} ${questionText} successfully. Some requested questions could not be generated from the available material.`;
   }
 
-  return `${params.passedCount} ${params.passedCount === 1 ? "question is" : "questions are"} ready.`;
+  return `${params.passedCount} ${questionText} successfully.`;
 }
 
 export function canPracticeGeneratedQuestions(params: { passedCount: number }): boolean {

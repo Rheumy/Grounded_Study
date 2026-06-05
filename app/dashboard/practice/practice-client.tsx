@@ -20,6 +20,10 @@ import {
   persistHiddenQuestionIds,
   persistSuppressHideWarningPreference
 } from "@/lib/question-hiding/browser";
+import {
+  buildGenerationSummary,
+  canPracticeGeneratedQuestions
+} from "@/lib/generation/job-outcome";
 
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
@@ -88,6 +92,8 @@ type GenerationJobProgress = {
   errorMessage: string | null;
   completedAt: string | null;
 };
+
+const GENERATION_POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
 function normalizeSessionLength(value: number): number {
   if (!Number.isFinite(value)) return 5;
@@ -356,7 +362,7 @@ export function PracticeClient() {
     const nextConfig: PracticeSessionConfig = {
       questionType: "ALL",
       sessionLength: requestedCount,
-      recycleMode: "NONE"
+      recycleMode: "ALL"
     };
 
     let cancelled = false;
@@ -412,7 +418,17 @@ export function PracticeClient() {
           completedAt: null
         });
 
+        let completedProgress: GenerationJobProgress | null = null;
+        const pollStartedAt = Date.now();
         while (!cancelled) {
+          if (Date.now() - pollStartedAt > GENERATION_POLL_TIMEOUT_MS) {
+            setAutoGenerationStatus("error");
+            setStatus(
+              "This generation is taking longer than expected. You can refresh this page or open Practice to check for saved questions."
+            );
+            return;
+          }
+
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
           const statusResponse = await fetch(
             `/api/questions/generate/status?jobId=${encodeURIComponent(body.jobId)}`
@@ -425,7 +441,6 @@ export function PracticeClient() {
           }
 
           setAutoGenerationProgress(progress);
-          setStatus(progress.currentPhase ?? "Generating your questions...");
 
           if (progress.status === "FAILED") {
             setAutoGenerationStatus("error");
@@ -434,15 +449,24 @@ export function PracticeClient() {
           }
 
           if (progress.status === "COMPLETED") {
+            completedProgress = progress;
+            setAutoGenerationStatus("done");
+            setStatus(buildGenerationSummary(progress));
             break;
           }
+
+          setStatus(progress.currentPhase ?? "Generating your questions...");
         }
 
         if (cancelled) {
           return;
         }
 
-        setAutoGenerationStatus("done");
+        if (completedProgress && !canPracticeGeneratedQuestions(completedProgress)) {
+          setView("setup");
+          return;
+        }
+
         setSessionConfig(nextConfig);
         router.replace("/dashboard/practice");
         setView("active");
