@@ -13,6 +13,11 @@ import {
   canPracticeGeneratedQuestions,
   type GenerationOutcome
 } from "@/lib/generation/job-outcome";
+import {
+  buildGenerationHandoffKey,
+  readGenerationHandoffJobId,
+  writeGenerationHandoffJobId
+} from "@/lib/generation/handoff";
 
 type Doc = { id: string; title: string };
 type GenerationJobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
@@ -224,6 +229,7 @@ export function GenerateForm({
     documentIds: string[];
     targetCount: number;
     questionTypes: VisibleQuestionType[];
+    handoffKey?: string | null;
   }) => {
     setError(null);
     setStatus(null);
@@ -263,6 +269,10 @@ export function GenerateForm({
         setError("Generation started, but the job could not be tracked.");
         setLoading(false);
         return;
+      }
+
+      if (params.handoffKey && typeof window !== "undefined") {
+        writeGenerationHandoffJobId(window.sessionStorage, params.handoffKey, body.jobId);
       }
 
       setJobProgress({
@@ -308,6 +318,12 @@ export function GenerateForm({
       Math.max(1, Math.round(Number.isFinite(rawCount) ? rawCount : 10))
     );
     const questionTypes = getAutogenerateQuestionTypes(searchParams.get("questionMix"));
+    const handoffKey = buildGenerationHandoffKey({
+      documentIds,
+      questionMix: searchParams.get("questionMix"),
+      count: targetCount,
+      difficulty
+    });
 
     setSelectedDocs(documentIds);
     setCount(targetCount);
@@ -320,6 +336,21 @@ export function GenerateForm({
     }
 
     async function resumeOrStartGeneration() {
+      const storedJobId =
+        typeof window !== "undefined"
+          ? readGenerationHandoffJobId(window.sessionStorage, handoffKey)
+          : null;
+
+      if (storedJobId) {
+        try {
+          await pollJob(storedJobId);
+          router.replace("/dashboard/generate");
+          return;
+        } catch {
+          // If the remembered job is unavailable, fall through to active-job resume/new handoff.
+        }
+      }
+
       const statusResponse = await fetch("/api/questions/generate/status");
       const progress = (await statusResponse.json().catch(() => null)) as GenerationJobProgress | null;
 
@@ -337,12 +368,12 @@ export function GenerateForm({
         return;
       }
 
-      await startGeneration({ documentIds, targetCount, questionTypes });
+      await startGeneration({ documentIds, targetCount, questionTypes, handoffKey });
       router.replace("/dashboard/generate");
     }
 
     void resumeOrStartGeneration();
-  }, [documents, maxRequestCount, router, searchParams, startGeneration]);
+  }, [difficulty, documents, maxRequestCount, pollJob, router, searchParams, startGeneration]);
 
   const isDisabled = selectedDocs.length === 0 || selectedQuestionTypes.length === 0 || loading;
   const activeProgress =
