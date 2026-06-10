@@ -20,10 +20,6 @@ import {
   persistHiddenQuestionIds,
   persistSuppressHideWarningPreference
 } from "@/lib/question-hiding/browser";
-import {
-  buildGenerationSummary,
-  canPracticeGeneratedQuestions
-} from "@/lib/generation/job-outcome";
 
 type QuestionTypeFilter = QuestionType | "ALL";
 type RecycleMode = "NONE" | "DUE" | "INCORRECT" | "ALL";
@@ -92,8 +88,6 @@ type GenerationJobProgress = {
   errorMessage: string | null;
   completedAt: string | null;
 };
-
-const GENERATION_POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
 function normalizeSessionLength(value: number): number {
   if (!Number.isFinite(value)) return 5;
@@ -226,7 +220,7 @@ export function PracticeClient() {
   const [suppressHideWarning, setSuppressHideWarning] = useState(false);
   const [hideWarningChoice, setHideWarningChoice] = useState(false);
   const [isHidingQuestion, setIsHidingQuestion] = useState(false);
-  const [autoGenerationStatus, setAutoGenerationStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
+  const [autoGenerationStatus, setAutoGenerationStatus] = useState<"idle" | "generating">("idle");
   const [autoGenerationProgress, setAutoGenerationProgress] = useState<GenerationJobProgress | null>(null);
 
   useEffect(() => {
@@ -344,153 +338,35 @@ export function PracticeClient() {
     }
 
     autoGenerationStarted.current = true;
-    const questionMix = searchParams.get("questionMix");
-    const rawCount = Number(searchParams.get("count") ?? 10);
-    const requestedCount = Math.min(
-      30,
-      Math.max(1, Math.round(Number.isFinite(rawCount) ? rawCount : 10))
-    );
-    const typeMix =
-      questionMix === "TRUE_FALSE"
-        ? { MCQ: 0, TRUE_FALSE: requestedCount }
-        : questionMix === "MIXED"
-          ? {
-              MCQ: Math.ceil(requestedCount / 2),
-              TRUE_FALSE: Math.floor(requestedCount / 2)
-            }
-          : { MCQ: requestedCount, TRUE_FALSE: 0 };
-    const nextConfig: PracticeSessionConfig = {
-      questionType: "ALL",
-      sessionLength: requestedCount,
-      recycleMode: "ALL"
-    };
+    router.replace(`/dashboard/generate?${searchParams.toString()}`);
+  }, [router, searchParams]);
 
+  useEffect(() => {
     let cancelled = false;
 
-    async function generateUploadedDocumentQuestions() {
-      setAutoGenerationStatus("generating");
-      setView("setup");
-      setQuestion(null);
-      setFeedback(null);
-      setResults([]);
-      setStatus(
-        "Preparing questions from your document. Small documents often process within a few minutes; larger PDFs may take longer. You can leave this page and come back."
-      );
+    async function loadActiveGenerationJob() {
+      const response = await fetch("/api/questions/generate/status");
+      const progress = (await response.json().catch(() => null)) as GenerationJobProgress | null;
 
-      try {
-        const response = await fetch("/api/questions/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            documentIds,
-            styleProfileId: null,
-            presetKey: null,
-            typeMix,
-            difficulty: 3,
-            count: requestedCount
-          })
-        });
-        const body = await response.json().catch(() => ({} as { jobId?: string; error?: string }));
-
-        if (cancelled) {
-          return;
-        }
-
-        if (!response.ok) {
-          setAutoGenerationStatus("error");
-          setStatus(body.error ?? "We couldn't generate questions from this upload yet.");
-          return;
-        }
-
-        if (!body.jobId) {
-          setAutoGenerationStatus("error");
-          setStatus("We couldn't track this generation job.");
-          return;
-        }
-
-        setAutoGenerationProgress({
-          jobId: body.jobId,
-          status: "PENDING",
-          currentPhase: "Waiting to start",
-          passedCount: 0,
-          requestedCount,
-          errorMessage: null,
-          completedAt: null
-        });
-
-        let completedProgress: GenerationJobProgress | null = null;
-        const pollStartedAt = Date.now();
-        while (!cancelled) {
-          if (Date.now() - pollStartedAt > GENERATION_POLL_TIMEOUT_MS) {
-            setAutoGenerationStatus("error");
-            setStatus(
-              "This generation is taking longer than expected. You can refresh this page or open Practice to check for saved questions."
-            );
-            return;
-          }
-
-          await new Promise((resolve) => window.setTimeout(resolve, 2000));
-          const statusResponse = await fetch(
-            `/api/questions/generate/status?jobId=${encodeURIComponent(body.jobId)}`
-          );
-          const progress = (await statusResponse.json().catch(() => null)) as GenerationJobProgress | null;
-
-          if (!statusResponse.ok || !progress?.status) {
-            setStatus("Still waiting for your questions...");
-            continue;
-          }
-
-          setAutoGenerationProgress(progress);
-
-          if (progress.status === "FAILED") {
-            if (canPracticeGeneratedQuestions(progress)) {
-              completedProgress = progress;
-              setAutoGenerationStatus("done");
-              setStatus(buildGenerationSummary(progress));
-              break;
-            }
-            setAutoGenerationStatus("error");
-            setStatus(progress.errorMessage ?? buildGenerationSummary(progress));
-            return;
-          }
-
-          if (progress.status === "COMPLETED") {
-            completedProgress = progress;
-            setAutoGenerationStatus("done");
-            setStatus(buildGenerationSummary(progress));
-            break;
-          }
-
-          setStatus(progress.currentPhase ?? "Generating your questions...");
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        if (completedProgress && !canPracticeGeneratedQuestions(completedProgress)) {
-          setView("setup");
-          return;
-        }
-
-        setSessionConfig(nextConfig);
-        router.replace("/dashboard/practice");
-        setView("active");
-        await loadQuestion([], "setup", nextConfig);
-      } catch {
-        if (!cancelled) {
-          setAutoGenerationStatus("error");
-          setStatus("We couldn't generate questions from this upload yet.");
-        }
+      if (
+        cancelled ||
+        !response.ok ||
+        !progress?.status ||
+        (progress.status !== "PENDING" && progress.status !== "PROCESSING")
+      ) {
+        return;
       }
+
+      setAutoGenerationProgress(progress);
+      setAutoGenerationStatus("generating");
     }
 
-    void generateUploadedDocumentQuestions();
+    void loadActiveGenerationJob();
 
     return () => {
       cancelled = true;
     };
-  }, [loadQuestion, router, searchParams]);
+  }, []);
 
   const resetSession = () => {
     setView("setup");
@@ -821,49 +697,15 @@ export function PracticeClient() {
 
           {autoGenerationStatus === "generating" ? (
             <div className="space-y-3 rounded-md border border-ink/10 bg-ink/[0.02] p-4">
-              <div className="flex items-center gap-3">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink/20 border-t-accent" />
-                <p className="text-sm text-ink/70">Generating your questions...</p>
-              </div>
+              <p className="text-sm font-medium text-ink">Questions are still being generated.</p>
               {autoGenerationProgress ? (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-3 text-xs text-ink/60">
-                    <span>
-                      {autoGenerationProgress.passedCount} of {autoGenerationProgress.requestedCount} saved
-                    </span>
-                    <span>
-                      About{" "}
-                      {Math.ceil(
-                        (Math.max(
-                          0,
-                          autoGenerationProgress.requestedCount - autoGenerationProgress.passedCount
-                        ) *
-                          12) /
-                          60
-                      )}{" "}
-                      min remaining
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-ink/10">
-                    <div
-                      className="h-full rounded-full bg-accent transition-all"
-                      style={{
-                        width: `${Math.round(
-                          (Math.min(
-                            autoGenerationProgress.passedCount,
-                            autoGenerationProgress.requestedCount
-                          ) /
-                            Math.max(1, autoGenerationProgress.requestedCount)) *
-                            100
-                        )}%`
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-ink/60">
-                    {autoGenerationProgress.currentPhase ?? "Preparing generation"}
-                  </p>
-                </div>
+                <p className="text-xs text-ink/60">
+                  {autoGenerationProgress.passedCount} of {autoGenerationProgress.requestedCount} saved so far.
+                </p>
               ) : null}
+              <Button type="button" variant="outline" onClick={() => router.push("/dashboard/generate")}>
+                View progress
+              </Button>
             </div>
           ) : (
             <Button onClick={startSession} className="shadow-sm">
