@@ -441,7 +441,12 @@ export async function generateQuestions(params: {
   count: number;
   typeMix?: TypeMix | null;
   onProgress?: GenerationProgressHandler;
+  maxRuntimeMs?: number;
 }) {
+  const startedAt = Date.now();
+  const shouldStopForRuntimeBudget = () =>
+    typeof params.maxRuntimeMs === "number" && Date.now() - startedAt >= params.maxRuntimeMs;
+
   logger.info(
     {
       ownerId: params.ownerId,
@@ -516,6 +521,20 @@ export async function generateQuestions(params: {
   };
 
   for (let i = 0; i < params.count; i += 1) {
+    if (shouldStopForRuntimeBudget()) {
+      logger.warn(
+        {
+          ownerId: params.ownerId,
+          requestedCount: params.count,
+          completedAttempts: results.length,
+          passedCount: results.filter((result) => result.status === "PASSED").length,
+          maxRuntimeMs: params.maxRuntimeMs
+        },
+        "Generation stopped before next question to preserve job completion"
+      );
+      break;
+    }
+
     const questionType = typeSlots[i] ?? "MCQ";
     let saved = false;
     let reason = "";
@@ -529,6 +548,22 @@ export async function generateQuestions(params: {
     let narrowRetrySourceChunks: RetrievedChunk[] = [];
 
     for (let attempt = 0; attempt < maxAttempts && !saved; attempt += 1) {
+      if (shouldStopForRuntimeBudget()) {
+        logger.warn(
+          {
+            ownerId: params.ownerId,
+            requestedCount: params.count,
+            questionNumber: i + 1,
+            attempt: attempt + 1,
+            passedCount: results.filter((result) => result.status === "PASSED").length,
+            maxRuntimeMs: params.maxRuntimeMs
+          },
+          "Generation stopped before retry to preserve job completion"
+        );
+        reason = "Generation stopped before all requested questions could be completed";
+        break;
+      }
+
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
         const retrievalStartedAt = Date.now();
         await params.onProgress?.({

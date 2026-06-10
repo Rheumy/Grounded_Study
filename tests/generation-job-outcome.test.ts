@@ -13,7 +13,7 @@ describe("generation job outcome", () => {
     ).toBe("FAILED_NONE");
     expect(
       buildGenerationSummary({ requestedCount: 5, passedCount: 0 })
-    ).toBe("No valid questions were saved. Please try again with a smaller or more focused source.");
+    ).toBe("We couldn't generate supported questions from this material. Try a different document or fewer questions.");
   });
 
   it("reports partial success instead of failure when at least one question was saved", () => {
@@ -23,7 +23,7 @@ describe("generation job outcome", () => {
     expect(getGenerationFailedCount({ requestedCount: 5, passedCount: 1 })).toBe(4);
     expect(
       buildGenerationSummary({ requestedCount: 5, passedCount: 1 })
-    ).toBe("1 question was saved. Some generated candidates were rejected during verification.");
+    ).toBe("Generated 1 of 5 questions. Some questions could not be generated from the available evidence.");
   });
 
   it("reports full success when all requested questions were saved", () => {
@@ -31,9 +31,7 @@ describe("generation job outcome", () => {
       getGenerationOutcome({ status: "COMPLETED", requestedCount: 5, passedCount: 5 })
     ).toBe("COMPLETED_FULL");
     expect(getGenerationFailedCount({ requestedCount: 5, passedCount: 5 })).toBe(0);
-    expect(buildGenerationSummary({ requestedCount: 5, passedCount: 5 })).toBe(
-      "5 questions are ready."
-    );
+    expect(buildGenerationSummary({ requestedCount: 5, passedCount: 5 })).toBe("Generated 5 questions.");
   });
 
   it("shows practice actions only when at least one question was saved", () => {

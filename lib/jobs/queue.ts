@@ -102,23 +102,44 @@ export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
 
 export async function reapStuckGenerationJobs(): Promise<number> {
   const lockExpiry = new Date(Date.now() - LOCK_TIMEOUT_MS);
+  const completedAt = new Date();
 
-  const result = await prisma.generationJob.updateMany({
+  const partialResult = await prisma.generationJob.updateMany({
     where: {
       status: "PROCESSING",
-      startedAt: { lt: lockExpiry }
+      startedAt: { lt: lockExpiry },
+      passedCount: { gt: 0 }
+    },
+    data: {
+      status: "COMPLETED",
+      currentPhase: "Generation complete with partial results",
+      errorMessage: null,
+      completedAt
+    }
+  });
+
+  const failedResult = await prisma.generationJob.updateMany({
+    where: {
+      status: "PROCESSING",
+      startedAt: { lt: lockExpiry },
+      passedCount: 0
     },
     data: {
       status: "FAILED",
       currentPhase: "Generation timed out",
-      errorMessage: "Generation timed out. Please try again.",
-      completedAt: new Date()
+      errorMessage:
+        "We couldn't generate supported questions from this material. Try a different document or fewer questions.",
+      completedAt
     }
   });
+  const count = partialResult.count + failedResult.count;
 
-  if (result.count > 0) {
-    logger.warn({ reapedCount: result.count }, "Reaped stuck generation jobs");
+  if (count > 0) {
+    logger.warn(
+      { reapedCount: count, completedPartial: partialResult.count, failed: failedResult.count },
+      "Reaped stuck generation jobs"
+    );
   }
 
-  return result.count;
+  return count;
 }

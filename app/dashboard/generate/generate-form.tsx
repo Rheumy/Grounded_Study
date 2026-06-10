@@ -110,13 +110,9 @@ export function GenerateForm({
     setLoading(nextProgress.status === "PENDING" || nextProgress.status === "PROCESSING");
 
     if (nextProgress.status === "FAILED") {
-      setLastCompletedJob(null);
-      setError(
-        nextProgress.passedCount > 0
-          ? null
-          : nextProgress.errorMessage ?? "Generation failed. Please try again."
-      );
-      setStatus(null);
+      setLastCompletedJob(nextProgress.passedCount > 0 ? nextProgress : null);
+      setError(nextProgress.passedCount > 0 ? null : nextProgress.errorMessage ?? buildGenerationSummary(nextProgress));
+      setStatus(nextProgress.passedCount > 0 ? buildGenerationSummary(nextProgress) : null);
       setLoading(false);
       return;
     }
@@ -163,8 +159,9 @@ export function GenerateForm({
       } else if (progress.status === "FAILED") {
         setJobProgress(progress);
         setLoading(false);
-        setError(null);
-        setStatus(null);
+        setLastCompletedJob(progress.passedCount > 0 ? progress : null);
+        setError(progress.passedCount > 0 ? null : progress.errorMessage ?? buildGenerationSummary(progress));
+        setStatus(progress.passedCount > 0 ? buildGenerationSummary(progress) : null);
       }
     }
 

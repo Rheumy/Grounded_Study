@@ -36,20 +36,37 @@ describe("generation job queue", () => {
   it("reaps stale processing generation jobs", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-03T12:00:00.000Z"));
-    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 1 });
+    (prisma.generationJob.updateMany as any)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 2 });
 
     const reaped = await reapStuckGenerationJobs();
 
-    expect(reaped).toBe(1);
-    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+    expect(reaped).toBe(3);
+    expect(prisma.generationJob.updateMany).toHaveBeenNthCalledWith(1, {
       where: {
         status: "PROCESSING",
-        startedAt: { lt: new Date("2026-05-03T11:50:00.000Z") }
+        startedAt: { lt: new Date("2026-05-03T11:50:00.000Z") },
+        passedCount: { gt: 0 }
+      },
+      data: {
+        status: "COMPLETED",
+        currentPhase: "Generation complete with partial results",
+        errorMessage: null,
+        completedAt: new Date("2026-05-03T12:00:00.000Z")
+      }
+    });
+    expect(prisma.generationJob.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        status: "PROCESSING",
+        startedAt: { lt: new Date("2026-05-03T11:50:00.000Z") },
+        passedCount: 0
       },
       data: {
         status: "FAILED",
         currentPhase: "Generation timed out",
-        errorMessage: "Generation timed out. Please try again.",
+        errorMessage:
+          "We couldn't generate supported questions from this material. Try a different document or fewer questions.",
         completedAt: new Date("2026-05-03T12:00:00.000Z")
       }
     });
@@ -100,7 +117,9 @@ describe("generation job queue", () => {
   });
 
   it("reaps stale jobs before claiming and reports them separately", async () => {
-    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 1 });
+    (prisma.generationJob.updateMany as any)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([]),
       generationJob: {
@@ -115,13 +134,14 @@ describe("generation job queue", () => {
     expect(batch.claimed).toBe(0);
     expect(batch.completed).toBe(0);
     expect(batch.failed).toBe(0);
-    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith(
+    expect(prisma.generationJob.updateMany).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        where: expect.objectContaining({ status: "PROCESSING" }),
+        where: expect.objectContaining({ status: "PROCESSING", passedCount: { gt: 0 } }),
         data: expect.objectContaining({
-          status: "FAILED",
-          currentPhase: "Generation timed out",
-          errorMessage: "Generation timed out. Please try again.",
+          status: "COMPLETED",
+          currentPhase: "Generation complete with partial results",
+          errorMessage: null,
           completedAt: expect.any(Date)
         })
       })

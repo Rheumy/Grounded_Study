@@ -443,8 +443,14 @@ export function PracticeClient() {
           setAutoGenerationProgress(progress);
 
           if (progress.status === "FAILED") {
+            if (canPracticeGeneratedQuestions(progress)) {
+              completedProgress = progress;
+              setAutoGenerationStatus("done");
+              setStatus(buildGenerationSummary(progress));
+              break;
+            }
             setAutoGenerationStatus("error");
-            setStatus(progress.errorMessage ?? "We couldn't generate questions from this upload yet.");
+            setStatus(progress.errorMessage ?? buildGenerationSummary(progress));
             return;
           }
 

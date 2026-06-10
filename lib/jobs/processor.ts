@@ -8,7 +8,8 @@ import { resolvePreset } from "@/lib/llm/presets";
 import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
 
 const ZERO_SAVED_GENERATION_MESSAGE =
-  "No valid questions were saved. Please try again with a smaller or more focused source.";
+  "We couldn't generate supported questions from this material. Try a different document or fewer questions.";
+const GENERATION_JOB_RUNTIME_BUDGET_MS = 45 * 1000;
 
 export async function processIngestionJob(jobId: string) {
   const job = await prisma.ingestionJob.findUnique({
@@ -167,6 +168,7 @@ export async function processGenerationJob(jobId: string) {
       difficulty: job.difficulty,
       count: job.requestedCount,
       typeMix,
+      maxRuntimeMs: GENERATION_JOB_RUNTIME_BUDGET_MS,
       onProgress: async (event) => {
         await prisma.generationJob.update({
           where: { id: jobId },
