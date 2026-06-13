@@ -6,10 +6,12 @@ import { incrementUsage } from "@/lib/billing/usage";
 import { generateQuestions, type GenerationProgressEvent, type TypeMix } from "@/lib/llm/generate";
 import { resolvePreset } from "@/lib/llm/presets";
 import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
+import { WAITING_FOR_SCHEDULED_RETRY_PHASE } from "@/lib/jobs/generation-job-state";
 
 const ZERO_SAVED_GENERATION_MESSAGE =
-  "We couldn't generate supported questions from this material. Try a different document or fewer questions.";
+  "No valid questions were saved. Please try again with a smaller or more focused source.";
 const GENERATION_JOB_RUNTIME_BUDGET_MS = 45 * 1000;
+export type GenerationProcessingSource = "cron" | "admin" | "immediate";
 
 export async function processIngestionJob(jobId: string) {
   const job = await prisma.ingestionJob.findUnique({
@@ -117,7 +119,41 @@ function phaseText(event: GenerationProgressEvent): string {
   return `Saved question ${event.questionNumber} of ${event.totalQuestions}`;
 }
 
-export async function processGenerationJob(jobId: string) {
+function millisecondsBetween(start: Date | null | undefined, end: Date) {
+  return start ? Math.max(0, end.getTime() - start.getTime()) : null;
+}
+
+async function requeueImmediateGenerationFailure(jobId: string, message: string) {
+  const requeued = await prisma.generationJob.updateMany({
+    where: {
+      id: jobId,
+      status: "FAILED",
+      passedCount: 0
+    },
+    data: {
+      status: "PENDING",
+      currentPhase: WAITING_FOR_SCHEDULED_RETRY_PHASE,
+      startedAt: null,
+      completedAt: null,
+      errorMessage: null
+    }
+  });
+
+  if (requeued.count > 0) {
+    logger.warn(
+      { jobId, processingSource: "immediate", message },
+      "Immediate generation failed; job left pending for cron fallback"
+    );
+  }
+
+  return requeued.count > 0;
+}
+
+export async function processGenerationJob(
+  jobId: string,
+  params: { processingSource?: GenerationProcessingSource } = {}
+) {
+  const processingSource = params.processingSource ?? "cron";
   const job = await prisma.generationJob.findUnique({
     where: { id: jobId }
   });
@@ -146,6 +182,9 @@ export async function processGenerationJob(jobId: string) {
   const documentIds = parseStringArrayJson(job.documentIds);
   const typeMix = parseTypeMixJson(job.typeMix);
   const presetStyleProfile = job.presetKey ? resolvePreset(job.presetKey) : null;
+  const processingStartedAt = new Date();
+  const effectiveStartedAt = job.startedAt ?? processingStartedAt;
+  let firstQuestionSavedMs: number | null = null;
 
   logger.info(
     {
@@ -154,7 +193,9 @@ export async function processGenerationJob(jobId: string) {
       documentIds,
       requestedCount: job.requestedCount,
       difficulty: job.difficulty,
-      typeMix
+      typeMix,
+      processingSource,
+      queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt)
     },
     "Generation job processing started"
   );
@@ -170,6 +211,9 @@ export async function processGenerationJob(jobId: string) {
       typeMix,
       maxRuntimeMs: GENERATION_JOB_RUNTIME_BUDGET_MS,
       onProgress: async (event) => {
+        if (event.phase === "saved" && firstQuestionSavedMs === null) {
+          firstQuestionSavedMs = Date.now() - effectiveStartedAt.getTime();
+        }
         await prisma.generationJob.update({
           where: { id: jobId },
           data: {
@@ -182,13 +226,14 @@ export async function processGenerationJob(jobId: string) {
 
     const passedCount = results.filter((result) => result.status === "PASSED").length;
     if (passedCount === 0) {
+      const completedAt = new Date();
       await prisma.generationJob.update({
         where: { id: jobId },
         data: {
           status: "FAILED",
           passedCount: 0,
           currentPhase: "No valid questions were saved",
-          completedAt: new Date(),
+          completedAt,
           errorMessage: ZERO_SAVED_GENERATION_MESSAGE
         }
       });
@@ -199,7 +244,11 @@ export async function processGenerationJob(jobId: string) {
           userId: job.userId,
           requestedCount: job.requestedCount,
           typeMix,
-          passedCount: 0
+          passedCount: 0,
+          processingSource,
+          queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt),
+          totalJobDurationMs: millisecondsBetween(effectiveStartedAt, completedAt),
+          firstQuestionSavedMs
         },
         "Generation job completed with zero saved questions"
       );
@@ -207,6 +256,7 @@ export async function processGenerationJob(jobId: string) {
     }
 
     await incrementUsage({ userId: job.userId, questions: passedCount });
+    const completedAt = new Date();
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {
@@ -216,29 +266,74 @@ export async function processGenerationJob(jobId: string) {
           passedCount < job.requestedCount
             ? `Generation complete: ${passedCount} of ${job.requestedCount} saved`
             : "Generation complete",
-        completedAt: new Date(),
+        completedAt,
         errorMessage: null
       }
     });
-    logger.info({ jobId, status: "COMPLETED" }, "Job transitioned to status COMPLETED");
+    logger.info(
+      {
+        jobId,
+        status: "COMPLETED",
+        processingSource,
+        queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt),
+        totalJobDurationMs: millisecondsBetween(effectiveStartedAt, completedAt),
+        firstQuestionSavedMs
+      },
+      "Job transitioned to status COMPLETED"
+    );
 
     logger.info(
-      { jobId, userId: job.userId, requestedCount: job.requestedCount, passedCount },
+      {
+        jobId,
+        userId: job.userId,
+        requestedCount: job.requestedCount,
+        passedCount,
+        processingSource,
+        queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt),
+        totalJobDurationMs: millisecondsBetween(effectiveStartedAt, completedAt),
+        firstQuestionSavedMs
+      },
       "Generation job completed"
     );
   } catch (error) {
     const message = sanitizeGenerationErrorMessage(error);
+    const completedAt = new Date();
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {
         status: "FAILED",
         currentPhase: "Generation failed",
-        completedAt: new Date(),
+        completedAt,
         errorMessage: message
       }
     });
-    logger.info({ jobId, status: "FAILED", message }, "Job transitioned to status FAILED");
-    logger.error({ jobId, userId: job.userId, message }, "Generation job failed");
+    logger.info(
+      {
+        jobId,
+        status: "FAILED",
+        message,
+        processingSource,
+        queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt),
+        totalJobDurationMs: millisecondsBetween(effectiveStartedAt, completedAt),
+        firstQuestionSavedMs
+      },
+      "Job transitioned to status FAILED"
+    );
+    logger.error(
+      {
+        jobId,
+        userId: job.userId,
+        message,
+        processingSource,
+        queueWaitMs: millisecondsBetween(job.createdAt, effectiveStartedAt),
+        totalJobDurationMs: millisecondsBetween(effectiveStartedAt, completedAt),
+        firstQuestionSavedMs
+      },
+      "Generation job failed"
+    );
+    if (processingSource === "immediate") {
+      await requeueImmediateGenerationFailure(jobId, message);
+    }
     throw error;
   }
 }

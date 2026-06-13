@@ -96,6 +96,7 @@ export function GenerateForm({
   ]);
   const pollStartedAtRef = useRef<number | null>(null);
   const autoGenerationStarted = useRef(false);
+  const immediateProcessingStarted = useRef<Set<string>>(new Set());
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) =>
@@ -153,6 +154,19 @@ export function GenerateForm({
       setStatus(buildGenerationSummary(nextProgress));
       setLoading(false);
     }
+  }, []);
+
+  const triggerImmediateProcessing = useCallback(async (jobId: string) => {
+    if (immediateProcessingStarted.current.has(jobId)) {
+      return;
+    }
+
+    immediateProcessingStarted.current.add(jobId);
+    await fetch("/api/questions/generate/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId })
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -234,6 +248,14 @@ export function GenerateForm({
       window.clearInterval(interval);
     };
   }, [jobProgress?.jobId, jobProgress?.status, pollJob]);
+
+  useEffect(() => {
+    if (!jobProgress?.jobId || jobProgress.status !== "PENDING") {
+      return;
+    }
+
+    void triggerImmediateProcessing(jobProgress.jobId);
+  }, [jobProgress?.jobId, jobProgress?.status, triggerImmediateProcessing]);
 
   const startGeneration = useCallback(async (params: {
     documentIds: string[];

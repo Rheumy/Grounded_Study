@@ -57,7 +57,9 @@ const generationJob = {
   currentPhase: "Waiting to start",
   startedAt: null,
   completedAt: null,
-  errorMessage: null
+  errorMessage: null,
+  createdAt: new Date("2026-05-03T11:59:00.000Z"),
+  updatedAt: new Date("2026-05-03T11:59:00.000Z")
 };
 
 describe("generation job processor", () => {
@@ -115,6 +117,34 @@ describe("generation job processor", () => {
         errorMessage: null,
         completedAt: expect.any(Date)
       })
+    });
+  });
+
+  it("requeues an immediate processing failure so cron can retry", async () => {
+    (prisma.generationJob.findUnique as any).mockResolvedValue({
+      ...generationJob,
+      status: "PROCESSING",
+      startedAt: new Date("2026-05-03T12:00:00.000Z")
+    });
+    (generateQuestions as any).mockRejectedValue(new Error("Temporary model outage"));
+
+    await expect(
+      processGenerationJob("job-1", { processingSource: "immediate" })
+    ).rejects.toThrow("Temporary model outage");
+
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "job-1",
+        status: "FAILED",
+        passedCount: 0
+      },
+      data: {
+        status: "PENDING",
+        currentPhase: "Waiting for scheduled retry",
+        startedAt: null,
+        completedAt: null,
+        errorMessage: null
+      }
     });
   });
 });

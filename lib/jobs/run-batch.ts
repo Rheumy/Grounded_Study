@@ -5,7 +5,11 @@ import {
   markJobFailed,
   reapStuckGenerationJobs
 } from "@/lib/jobs/queue";
-import { processGenerationJob, processIngestionJob } from "@/lib/jobs/processor";
+import {
+  processGenerationJob,
+  processIngestionJob,
+  type GenerationProcessingSource
+} from "@/lib/jobs/processor";
 import { logger } from "@/lib/observability/logger";
 
 export type IngestionBatchSource = "cron" | "admin";
@@ -59,7 +63,7 @@ export async function processIngestionJobsBatch(params: {
 
 export async function processGenerationJobsBatch(params: {
   limit: number;
-  source: IngestionBatchSource;
+  source: Exclude<GenerationProcessingSource, "immediate">;
 }) {
   const limit = Math.max(1, Math.min(params.limit, 5));
   const results: Array<{ jobId: string; status: "completed" | "failed"; error?: string }> = [];
@@ -79,7 +83,7 @@ export async function processGenerationJobsBatch(params: {
     );
 
     try {
-      await processGenerationJob(job.id);
+      await processGenerationJob(job.id, { processingSource: params.source });
       results.push({ jobId: job.id, status: "completed" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";

@@ -4,6 +4,7 @@ vi.mock("@/lib/db/prisma", () => ({
   prisma: {
     $transaction: vi.fn(),
     generationJob: {
+      findFirst: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn()
     }
@@ -24,7 +25,11 @@ vi.mock("@/lib/observability/logger", () => ({
 
 import { prisma } from "@/lib/db/prisma";
 import { sanitizeGenerationErrorMessage } from "@/lib/jobs/errors";
-import { claimNextGenerationJob, reapStuckGenerationJobs } from "@/lib/jobs/queue";
+import {
+  claimGenerationJobForUser,
+  claimNextGenerationJob,
+  reapStuckGenerationJobs
+} from "@/lib/jobs/queue";
 import { processGenerationJobsBatch } from "@/lib/jobs/run-batch";
 
 describe("generation job queue", () => {
@@ -114,6 +119,102 @@ describe("generation job queue", () => {
         errorMessage: null
       }
     });
+  });
+
+  it("lets the correct user claim their pending generation job by ID", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-03T12:00:00.000Z"));
+    const claimedJob = {
+      id: "job-1",
+      userId: "user-1",
+      status: "PROCESSING"
+    };
+    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 1 });
+    (prisma.generationJob.findFirst as any).mockResolvedValue(claimedJob);
+
+    const claimed = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-1" });
+
+    expect(claimed).toEqual(claimedJob);
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "job-1",
+        userId: "user-1",
+        status: "PENDING",
+        OR: [
+          { currentPhase: null },
+          { currentPhase: { not: "Waiting for scheduled retry" } }
+        ]
+      },
+      data: {
+        status: "PROCESSING",
+        startedAt: new Date("2026-05-03T12:00:00.000Z"),
+        currentPhase: "Starting generation",
+        errorMessage: null
+      }
+    });
+  });
+
+  it("does not let another user claim a generation job", async () => {
+    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 0 });
+
+    const claimed = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-2" });
+
+    expect(claimed).toBeNull();
+    expect(prisma.generationJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("allows only one of two competing generation job claims to succeed", async () => {
+    (prisma.generationJob.updateMany as any)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    (prisma.generationJob.findFirst as any).mockResolvedValue({
+      id: "job-1",
+      userId: "user-1",
+      status: "PROCESSING"
+    });
+
+    const first = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-1" });
+    const second = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-1" });
+
+    expect(first).toMatchObject({ id: "job-1", status: "PROCESSING" });
+    expect(second).toBeNull();
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledTimes(2);
+    expect(prisma.generationJob.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim an already processing or completed generation job", async () => {
+    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 0 });
+
+    const claimed = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-1" });
+
+    expect(claimed).toBeNull();
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "job-1", userId: "user-1", status: "PENDING" })
+      })
+    );
+    expect(prisma.generationJob.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("does not immediately reclaim a job already requeued for scheduled retry", async () => {
+    (prisma.generationJob.updateMany as any).mockResolvedValue({ count: 0 });
+
+    const claimed = await claimGenerationJobForUser({ jobId: "job-1", userId: "user-1" });
+
+    expect(claimed).toBeNull();
+    expect(prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "job-1",
+          userId: "user-1",
+          status: "PENDING",
+          OR: [
+            { currentPhase: null },
+            { currentPhase: { not: "Waiting for scheduled retry" } }
+          ]
+        })
+      })
+    );
   });
 
   it("reaps stale jobs before claiming and reports them separately", async () => {

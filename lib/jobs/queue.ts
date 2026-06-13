@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import type { GenerationJob, IngestionJob } from "@prisma/client";
 import { logger } from "@/lib/observability/logger";
+import { WAITING_FOR_SCHEDULED_RETRY_PHASE } from "@/lib/jobs/generation-job-state";
 
 const LOCK_TIMEOUT_MS = 1000 * 60 * 10;
 
@@ -98,6 +99,58 @@ export async function claimNextGenerationJob(): Promise<GenerationJob | null> {
 
     return job;
   });
+}
+
+export async function claimGenerationJobForUser(params: {
+  jobId: string;
+  userId: string;
+}): Promise<GenerationJob | null> {
+  const now = new Date();
+
+  const claimed = await prisma.generationJob.updateMany({
+    where: {
+      id: params.jobId,
+      userId: params.userId,
+      status: "PENDING",
+      OR: [
+        { currentPhase: null },
+        { currentPhase: { not: WAITING_FOR_SCHEDULED_RETRY_PHASE } }
+      ]
+    },
+    data: {
+      status: "PROCESSING",
+      startedAt: now,
+      currentPhase: "Starting generation",
+      errorMessage: null
+    }
+  });
+
+  if (claimed.count === 0) {
+    logger.info(
+      { jobId: params.jobId, userId: params.userId, claimed: false },
+      "Generation job user claim skipped"
+    );
+    return null;
+  }
+
+  const job = await prisma.generationJob.findFirst({
+    where: {
+      id: params.jobId,
+      userId: params.userId
+    }
+  });
+
+  logger.info(
+    {
+      jobId: params.jobId,
+      userId: params.userId,
+      claimed: true
+    },
+    "Generation job user claim succeeded"
+  );
+  logger.info({ jobId: params.jobId, status: "PROCESSING" }, "Job transitioned to status PROCESSING");
+
+  return job;
 }
 
 export async function reapStuckGenerationJobs(): Promise<number> {
