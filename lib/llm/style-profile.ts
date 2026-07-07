@@ -8,8 +8,7 @@ import {
 } from "@/lib/llm/schemas/style-profile";
 import { logger } from "@/lib/observability/logger";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
-
-const MODEL = "gpt-4o-mini";
+import { getStyleProfileModel } from "@/lib/llm/model-config";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -280,8 +279,9 @@ export async function extractStyleProfile(params: {
   const user = sections.join("\n");
 
   const client = getOpenAIClient();
+  const model = getStyleProfileModel();
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
@@ -299,7 +299,7 @@ export async function extractStyleProfile(params: {
       hasSampleFilesText: Boolean(params.sampleFilesText || params.examplesImagesText),
       hasInstructionsText: Boolean(params.instructionsText)
     },
-    modelOverride: MODEL
+    modelOverride: model
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

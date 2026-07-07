@@ -2,14 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { DocumentsListItem } from "@/lib/documents/response";
 
-type Doc = {
-  id: string;
-  title: string;
-  status: string;
-  createdAt?: string;
-  latestError: string | null;
-};
+type Doc = DocumentsListItem;
 
 const LONG_PROCESSING_MS = 10 * 60 * 1000;
 
@@ -19,7 +14,21 @@ function getStatusLabel(status: string): string {
   if (status === "READY") return "Ready";
   if (status === "OCR_DISABLED") return "Failed";
   if (status === "FAILED") return "Failed";
-  return status;
+  return "Needs attention";
+}
+
+function normalizeDocumentItem(value: unknown): Doc | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  if (!id) return null;
+
+  const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Untitled study material";
+  const status = typeof raw.status === "string" && raw.status.trim() ? raw.status.trim() : "UNKNOWN";
+  const createdAt = typeof raw.createdAt === "string" && Number.isFinite(Date.parse(raw.createdAt)) ? raw.createdAt : null;
+  const latestError = typeof raw.latestError === "string" && raw.latestError.trim() ? raw.latestError.trim() : null;
+
+  return { id, title, status, createdAt, latestError };
 }
 
 export function getStatusMessage(doc: Doc, now = Date.now()): string {
@@ -50,7 +59,7 @@ export function getStatusMessage(doc: Doc, now = Date.now()): string {
     return doc.latestError ?? "Processing failed. Try uploading again or ask an admin to inspect the job.";
   }
 
-  return `Status: ${doc.status}`;
+  return "This study material has an unexpected processing state. Please try refreshing the page, or ask an admin to inspect it.";
 }
 
 export function toggleSelectedDocumentId(selectedIds: string[], documentId: string, checked: boolean) {
@@ -77,7 +86,9 @@ export function buildDeleteDocumentRequestInit(deleteAssociatedQuestions: boolea
 
 export function DocumentsList({ documents }: { documents: Doc[] }) {
   const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<Doc[]>(documents);
+  const [items, setItems] = useState<Doc[]>(() =>
+    documents.map(normalizeDocumentItem).filter((doc): doc is Doc => doc !== null)
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmingIds, setConfirmingIds] = useState<string[] | null>(null);
   const [deleteAssociatedQuestions, setDeleteAssociatedQuestions] = useState(true);
@@ -85,8 +96,9 @@ export function DocumentsList({ documents }: { documents: Doc[] }) {
   const router = useRouter();
 
   useEffect(() => {
-    setItems(documents);
-    setSelectedIds((prev) => prev.filter((id) => documents.some((doc) => doc.id === id)));
+    const normalizedDocuments = documents.map(normalizeDocumentItem).filter((doc): doc is Doc => doc !== null);
+    setItems(normalizedDocuments);
+    setSelectedIds((prev) => prev.filter((id) => normalizedDocuments.some((doc) => doc.id === id)));
   }, [documents]);
 
   useEffect(() => {
@@ -98,9 +110,16 @@ export function DocumentsList({ documents }: { documents: Doc[] }) {
       if (!response.ok) return;
 
       const body = await response.json().catch(() => null);
-      if (!body?.documents || !Array.isArray(body.documents)) return;
+      if (!body?.documents || !Array.isArray(body.documents)) {
+        setError("We could not refresh your study materials. Please reload the page.");
+        return;
+      }
 
-      setItems(body.documents as Doc[]);
+      const refreshedItems = (body.documents as unknown[])
+        .map(normalizeDocumentItem)
+        .filter((doc): doc is Doc => doc !== null);
+      setItems(refreshedItems);
+      setSelectedIds((prev) => prev.filter((id) => refreshedItems.some((doc) => doc.id === id)));
       router.refresh();
     }, 3000);
 

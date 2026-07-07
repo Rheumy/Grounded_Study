@@ -9,8 +9,7 @@ import {
 } from "@/lib/llm/schemas/style-profile";
 import { logger } from "@/lib/observability/logger";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
-
-const MODEL = "gpt-4o-mini";
+import { getQuestionGenerationModel } from "@/lib/llm/model-config";
 
 export type RetrievalChunk = {
   id: string;
@@ -1036,8 +1035,10 @@ export async function generateQuestion(params: {
   // endpoint's strict mode always rejects schemas with optional fields, so we
   // skip it and normalise the raw model output ourselves.
   const client = getOpenAIClient();
+  const model = getQuestionGenerationModel();
   logger.info(
     {
+      model,
       requestedType,
       difficulty: params.difficulty,
       chunkCount: params.chunks.length,
@@ -1046,7 +1047,7 @@ export async function generateQuestion(params: {
     "Question generation prompt prepared"
   );
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
@@ -1068,7 +1069,7 @@ export async function generateQuestion(params: {
       hasStyleProfile: Boolean(params.styleProfile && Object.keys(params.styleProfile as object).length > 0),
       ...(params.metadata ?? {})
     },
-    modelOverride: MODEL
+    modelOverride: model
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

@@ -3,8 +3,7 @@ import path from "path";
 import { getOpenAIClient } from "@/lib/llm/openai";
 import { type ShortAnswerGrade } from "@/lib/llm/schemas/grading";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
-
-const MODEL = "gpt-4o-mini";
+import { getShortAnswerGraderModel } from "@/lib/llm/model-config";
 
 // ---------------------------------------------------------------------------
 // Normalise the model's raw grading response.
@@ -70,8 +69,9 @@ export async function gradeShortAnswer(params: {
   const user = `Question: ${params.question}\nExpected answer: ${params.expectedAnswer}\nStudent answer: ${params.studentAnswer}\n\nExcerpts:\n${evidence}`;
 
   const client = getOpenAIClient();
+  const model = getShortAnswerGraderModel();
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
@@ -91,7 +91,7 @@ export async function gradeShortAnswer(params: {
       studentAnswerLength: params.studentAnswer.length,
       ...(params.metadata ?? {})
     },
-    modelOverride: MODEL
+    modelOverride: model
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

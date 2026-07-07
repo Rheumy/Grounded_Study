@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UploadForm } from "@/app/dashboard/documents/upload-form";
 import { DocumentsList } from "@/app/dashboard/documents/documents-list";
+import { toDocumentsListItems } from "@/lib/documents/response";
 
 export default async function DocumentsPage() {
   const user = await requireUser();
@@ -17,13 +18,7 @@ export default async function DocumentsPage() {
     }
   });
 
-  const safeDocs = documents.map((doc) => ({
-    id: doc.id,
-    title: doc.title,
-    status: doc.status,
-    createdAt: doc.createdAt.toISOString(),
-    latestError: doc.ingestionJobs[0]?.lastError ?? null
-  }));
+  const safeDocs = toDocumentsListItems(documents);
 
   return (
     <div className="space-y-6">

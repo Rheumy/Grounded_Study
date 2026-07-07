@@ -441,6 +441,18 @@ describe("document selection helpers", () => {
     ).toContain("taking longer than usual");
   });
 
+  it("shows a clean fallback for unexpected legacy document states", () => {
+    expect(
+      getStatusMessage({
+        id: "doc-legacy",
+        title: "legacy.pdf",
+        status: "UNKNOWN",
+        createdAt: null,
+        latestError: null
+      })
+    ).toContain("unexpected processing state");
+  });
+
   it("selects one document", () => {
     expect(toggleSelectedDocumentId([], "doc-1", true)).toEqual(["doc-1"]);
   });

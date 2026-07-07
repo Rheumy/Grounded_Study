@@ -2,8 +2,9 @@ import { getOpenAIClient } from "@/lib/llm/openai";
 import { type AiUsageFeature } from "@/lib/observability/ai-cost";
 import { estimateAiCostUsd } from "@/lib/observability/ai-cost";
 import { recordOpenAiUsageEvent } from "@/lib/observability/ai-usage";
+import { OPENAI_EMBEDDING_MODEL } from "@/lib/llm/model-config";
 
-export const EMBEDDING_MODEL = "text-embedding-3-small";
+export const EMBEDDING_MODEL = OPENAI_EMBEDDING_MODEL;
 
 export type EmbeddingUsageSummary = {
   model: string;

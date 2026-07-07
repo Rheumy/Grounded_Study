@@ -14,8 +14,7 @@ import {
   findAwkwardStemReason,
   findUnexplainedAbbreviations
 } from "@/lib/llm/question-quality";
-
-const MODEL = "gpt-4o-mini";
+import { getQuestionVerifierModel } from "@/lib/llm/model-config";
 
 export type VerifierResult = {
   status: "PASSED" | "FAILED";
@@ -1122,8 +1121,9 @@ export async function verifyQuestion(params: {
     .join("\n\n");
 
   const client = getOpenAIClient();
+  const model = getQuestionVerifierModel();
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user }
@@ -1145,7 +1145,7 @@ export async function verifyQuestion(params: {
       assumedBackgroundLevel: getAssumedBackgroundLevel(params.styleProfile),
       ...(params.metadata ?? {})
     },
-    modelOverride: MODEL
+    modelOverride: model
   });
 
   const rawText = response.choices[0]?.message?.content ?? "";

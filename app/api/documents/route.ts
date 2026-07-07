@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/lib/auth/require-user-api";
 import { prisma } from "@/lib/db/prisma";
+import { toDocumentsListItems } from "@/lib/documents/response";
 
 export async function GET() {
   const user = await requireUserApi();
@@ -20,12 +21,6 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    documents: documents.map((document) => ({
-      id: document.id,
-      title: document.title,
-      status: document.status,
-      createdAt: document.createdAt.toISOString(),
-      latestError: document.ingestionJobs[0]?.lastError ?? null
-    }))
+    documents: toDocumentsListItems(documents)
   });
 }

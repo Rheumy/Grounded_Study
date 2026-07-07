@@ -40,7 +40,7 @@ type DocumentStatusForUpload = {
   id: string;
   title?: string;
   status: string;
-  createdAt?: string | Date;
+  createdAt?: string | Date | null;
 };
 
 export const RECENT_UPLOAD_BATCH_STORAGE_KEY = "grounded-study:recent-upload-batch:v1";

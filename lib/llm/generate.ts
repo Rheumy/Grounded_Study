@@ -15,6 +15,10 @@ import {
 } from "@/lib/retrieval/retrieve";
 import { logger } from "@/lib/observability/logger";
 import { sanitizeFeedbackText } from "@/lib/feedback/user-facing";
+import {
+  getQuestionGenerationModel,
+  getQuestionVerifierModel
+} from "@/lib/llm/model-config";
 
 const MAX_RETRIES = 3;
 const OUTSIDER_RETRY_BONUS = 1;
@@ -446,6 +450,8 @@ export async function generateQuestions(params: {
   const startedAt = Date.now();
   const shouldStopForRuntimeBudget = () =>
     typeof params.maxRuntimeMs === "number" && Date.now() - startedAt >= params.maxRuntimeMs;
+  const generationModel = getQuestionGenerationModel();
+  const verifierModel = getQuestionVerifierModel();
 
   logger.info(
     {
@@ -564,6 +570,8 @@ export async function generateQuestions(params: {
         break;
       }
 
+      const attemptStartedAt = Date.now();
+      const retryCount = attempt;
       if (retryMode !== "same_chunks" || currentChunks.length === 0) {
         const retrievalStartedAt = Date.now();
         await params.onProgress?.({
@@ -633,8 +641,12 @@ export async function generateQuestions(params: {
       logger.info(
         {
           ownerId: params.ownerId,
+          generationModel,
+          verifierModel,
           questionType,
+          requestedDifficulty: params.difficulty,
           attempt: attempt + 1,
+          retryCount,
           retryMode,
           retryStrategy,
           chunkCount: currentChunks.length
@@ -644,6 +656,21 @@ export async function generateQuestions(params: {
 
       if (currentChunks.length === 0) {
         reason = "Retrieved material was mostly document metadata or lacked enough teachable content";
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
+            questionType,
+            requestedDifficulty: params.difficulty,
+            attempt: attempt + 1,
+            retryCount,
+            verifierStatus: "NOT_RUN",
+            failureBoundary: "retrieval",
+            attemptDurationMs: durationMs(attemptStartedAt)
+          },
+          "Generation question attempt completed"
+        );
         retryMode = "refreshed_retrieval";
         continue;
       }
@@ -659,8 +686,11 @@ export async function generateQuestions(params: {
         logger.info(
           {
             ownerId: params.ownerId,
+            model: generationModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode,
             chunkCount: currentChunks.length
           },
@@ -691,9 +721,12 @@ export async function generateQuestions(params: {
         logger.info(
           {
             ownerId: params.ownerId,
+            model: generationModel,
             questionType,
             returnedQuestionType: generated.type,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode,
             phaseDurationMs: durationMs(generationStartedAt)
           },
@@ -707,9 +740,16 @@ export async function generateQuestions(params: {
         logger.warn(
           {
             ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode: "same_chunks",
+            verifierStatus: "NOT_RUN",
+            failureBoundary: "generation",
+            attemptDurationMs: durationMs(attemptStartedAt),
             error: generationErrorMessage
           },
           "generateQuestion threw — retrying with same chunks"
@@ -736,6 +776,21 @@ export async function generateQuestions(params: {
 
       if (generated.verifierStatus === "INSUFFICIENT_EVIDENCE") {
         reason = "Insufficient evidence";
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
+            questionType,
+            requestedDifficulty: params.difficulty,
+            attempt: attempt + 1,
+            retryCount,
+            verifierStatus: "INSUFFICIENT_EVIDENCE",
+            failureBoundary: "normalization",
+            attemptDurationMs: durationMs(attemptStartedAt)
+          },
+          "Generation question attempt completed"
+        );
         retryMode = "refreshed_retrieval";
         continue;
       }
@@ -747,9 +802,16 @@ export async function generateQuestions(params: {
         logger.warn(
           {
             ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
             requestedQuestionType: questionType,
             generatedQuestionType: generated.type,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
+            verifierStatus: "NOT_RUN",
+            failureBoundary: "normalization",
+            attemptDurationMs: durationMs(attemptStartedAt),
             typeMismatchRetryCount: attempt + 1,
             retryMode
           },
@@ -764,6 +826,21 @@ export async function generateQuestions(params: {
       );
       if (!citationsValid) {
         reason = "Citations reference unknown chunks";
+        logger.info(
+          {
+            ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
+            questionType,
+            requestedDifficulty: params.difficulty,
+            attempt: attempt + 1,
+            retryCount,
+            verifierStatus: "NOT_RUN",
+            failureBoundary: "normalization",
+            attemptDurationMs: durationMs(attemptStartedAt)
+          },
+          "Generation question attempt completed"
+        );
         retryMode = "refreshed_retrieval";
         continue;
       }
@@ -779,8 +856,11 @@ export async function generateQuestions(params: {
         logger.info(
           {
             ownerId: params.ownerId,
+            model: verifierModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode
           },
           "Question verifier started"
@@ -799,9 +879,13 @@ export async function generateQuestions(params: {
         logger.info(
           {
             ownerId: params.ownerId,
+            model: verifierModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode,
+            verifierStatus: verifier.status,
             phaseDurationMs: durationMs(verifierStartedAt)
           },
           "Question verifier completed"
@@ -810,9 +894,16 @@ export async function generateQuestions(params: {
         logger.warn(
           {
             ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
             retryMode: "same_chunks",
+            verifierStatus: "ERROR",
+            failureBoundary: "verifier",
+            attemptDurationMs: durationMs(attemptStartedAt),
             error: verifyError instanceof Error ? verifyError.message : String(verifyError)
           },
           "verifyQuestion threw — retrying with same chunks"
@@ -830,8 +921,15 @@ export async function generateQuestions(params: {
         logger.info(
           {
             ownerId: params.ownerId,
+            generationModel,
+            verifierModel,
             questionType,
+            requestedDifficulty: params.difficulty,
             attempt: attempt + 1,
+            retryCount,
+            verifierStatus: verifier.status,
+            failureBoundary: "verifier",
+            attemptDurationMs: durationMs(attemptStartedAt),
             failureCodes: verifier.failureCodes ?? [],
             reason: verifier.reason
           },
@@ -924,8 +1022,12 @@ export async function generateQuestions(params: {
       logger.info(
         {
           ownerId: params.ownerId,
+          generationModel,
+          verifierModel,
           questionType,
-          attempt: attempt + 1
+          requestedDifficulty: params.difficulty,
+          attempt: attempt + 1,
+          retryCount
         },
         "Question DB save started"
       );
@@ -947,8 +1049,12 @@ export async function generateQuestions(params: {
       logger.info(
         {
           ownerId: params.ownerId,
+          generationModel,
+          verifierModel,
           questionType,
+          requestedDifficulty: params.difficulty,
           attempt: attempt + 1,
+          retryCount,
           questionId: record.id,
           phaseDurationMs: durationMs(saveStartedAt)
         },
@@ -985,6 +1091,22 @@ export async function generateQuestions(params: {
       }
 
       results.push({ questionId: record.id, status: "PASSED" });
+      logger.info(
+        {
+          ownerId: params.ownerId,
+          generationModel,
+          verifierModel,
+          questionType,
+          requestedDifficulty: params.difficulty,
+          attempt: attempt + 1,
+          retryCount,
+          verifierStatus: "PASSED",
+          failureBoundary: null,
+          questionId: record.id,
+          attemptDurationMs: durationMs(attemptStartedAt)
+        },
+        "Generation question attempt completed"
+      );
       savedTypeCounts[questionType] += 1;
       await params.onProgress?.({
         phase: "saved",
